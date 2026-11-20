@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production build & Electron desktop outputs
+dist/
+dist_app/
+build_output/
+release/
+
+# Large Desktop Artifacts & Binaries
+*.exe
+*.zip
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.msi
+*.blockmap
+my_pump_source_code.zip
+
+# Environment & local secret files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*.local
+
+# Logs
+*.log
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# OS metadata
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Editor & IDE directories
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
