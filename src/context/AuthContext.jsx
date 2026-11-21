@@ -112,12 +112,19 @@ export function AuthProvider({ children }) {
    * Enterprise Supabase Sign In with Email and Password
    */
   const login = async (email, password) => {
-    setAuthLoading(true);
     try {
       const cleanEmail = email.trim().toLowerCase();
+      console.log('[AuthContext] Initiating Supabase signInWithPassword for:', cleanEmail);
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: cleanEmail,
         password: password.trim()
+      });
+
+      console.log('[AuthContext] Supabase signInWithPassword response:', {
+        userId: data?.user?.id,
+        hasSession: Boolean(data?.session),
+        error: error?.message
       });
 
       if (error) {
@@ -130,14 +137,12 @@ export function AuthProvider({ children }) {
         setSession(data.session);
         setIsAuthenticated(true);
         setAuthModalMode(null);
-        return { user: mapped, error: null };
+        return { user: mapped, session: data.session, error: null };
       }
-      return { user: null, error: new Error('No user returned') };
+      return { user: null, error: new Error('No user returned by authentication provider') };
     } catch (err) {
-      console.error('[AuthContext] Login error:', err);
+      console.error('[AuthContext] Login error caught:', err);
       return { user: null, error: err };
-    } finally {
-      setAuthLoading(false);
     }
   };
 
@@ -145,10 +150,10 @@ export function AuthProvider({ children }) {
    * Enterprise Supabase Sign Up with Petrol Pump Profile Metadata
    */
   const signup = async (formData) => {
-    setAuthLoading(true);
     try {
       const cleanEmail = formData.email?.trim().toLowerCase();
       const password = formData.password?.trim();
+      console.log('[AuthContext] Initiating Supabase signUp for:', cleanEmail);
 
       const userMetadata = {
         fuelStationName: formData.fuelStationName?.trim() || 'SHITAL PETROL PUMP',
@@ -168,24 +173,31 @@ export function AuthProvider({ children }) {
         }
       });
 
+      console.log('[AuthContext] Supabase signUp response:', {
+        userId: data?.user?.id,
+        hasSession: Boolean(data?.session),
+        identities: data?.user?.identities?.length,
+        error: error?.message
+      });
+
       if (error) {
         throw error;
       }
 
       if (data?.user) {
         const mapped = mapSupabaseUser(data.user);
-        setCurrentUser(mapped);
-        setSession(data.session);
-        setIsAuthenticated(true);
-        setAuthModalMode(null);
+        if (data.session) {
+          setCurrentUser(mapped);
+          setSession(data.session);
+          setIsAuthenticated(true);
+          setAuthModalMode(null);
+        }
         return { user: mapped, session: data.session, error: null };
       }
       return { user: null, error: new Error('User creation failed') };
     } catch (err) {
-      console.error('[AuthContext] Signup error:', err);
+      console.error('[AuthContext] Signup error caught:', err);
       return { user: null, error: err };
-    } finally {
-      setAuthLoading(false);
     }
   };
 

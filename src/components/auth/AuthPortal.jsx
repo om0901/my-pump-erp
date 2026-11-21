@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, isEnvConfigured, isSupabaseConfigured } from '../../lib/supabaseClient';
 import {
   Fuel,
   Building2,
@@ -18,7 +18,8 @@ import {
   Sparkles,
   Phone,
   Receipt,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function AuthPortal() {
@@ -38,7 +39,7 @@ export default function AuthPortal() {
   // Password visibility
   const [showPassword, setShowPassword] = useState(false);
 
-  // States
+  // Status & Feedback States
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -53,6 +54,7 @@ export default function AuthPortal() {
     setMode(newMode);
   };
 
+  // --- 1. SIGN IN HANDLER ---
   const handleSignIn = async (e) => {
     e.preventDefault();
     clearMessages();
@@ -68,26 +70,35 @@ export default function AuthPortal() {
     }
 
     setSubmitting(true);
+    console.log('[AuthPortal] Submitting Sign In for:', cleanEmail);
+
     try {
-      const { user, error } = await login(cleanEmail, password);
+      const { user, session, error } = await login(cleanEmail, password);
+      console.log('[AuthPortal] Sign In result:', { user, hasSession: Boolean(session), error });
+
       if (error) {
-        if (error.message?.toLowerCase().includes('invalid login credentials')) {
-          setErrorMessage('Invalid email or password. Please verify and try again.');
-        } else if (error.message?.toLowerCase().includes('email not confirmed')) {
-          setErrorMessage('Email not confirmed. Please check your inbox or disable email confirmation in Supabase.');
+        const msg = error.message || String(error);
+        if (msg.toLowerCase().includes('invalid login credentials')) {
+          setErrorMessage('Invalid email or password. Please check your credentials and try again.');
+        } else if (msg.toLowerCase().includes('email not confirmed')) {
+          setErrorMessage('Email address not confirmed. Please check your email inbox or disable email confirmation in Supabase Auth settings.');
+        } else if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network')) {
+          setErrorMessage('Network error: Unable to connect to Supabase server. Please check your internet connection.');
         } else {
-          setErrorMessage(error.message || 'Failed to sign in. Please try again.');
+          setErrorMessage(msg);
         }
-      } else if (user) {
-        setSuccessMessage('Login successful! Loading your station workspace...');
+      } else if (user || session) {
+        setSuccessMessage('Login verified! Redirecting to Station Dashboard...');
       }
     } catch (err) {
-      setErrorMessage(err.message || 'An unexpected error occurred during sign in.');
+      console.error('[AuthPortal] Unexpected error during Sign In:', err);
+      setErrorMessage(err.message || 'An unexpected error occurred while signing in.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // --- 2. SIGN UP / REGISTRATION HANDLER ---
   const handleSignUp = async (e) => {
     e.preventDefault();
     clearMessages();
@@ -113,13 +124,15 @@ export default function AuthPortal() {
       return;
     }
     if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match. Please re-enter.');
+      setErrorMessage('Passwords do not match. Please re-enter both passwords.');
       return;
     }
 
     setSubmitting(true);
+    console.log('[AuthPortal] Submitting Registration for:', { cleanStation, cleanOwner, cleanEmail });
+
     try {
-      const { user, error } = await signup({
+      const { user, session, error } = await signup({
         email: cleanEmail,
         password: password,
         fuelStationName: cleanStation,
@@ -127,22 +140,33 @@ export default function AuthPortal() {
         mobile: mobile.trim()
       });
 
+      console.log('[AuthPortal] Sign Up result:', { user, hasSession: Boolean(session), error });
+
       if (error) {
-        if (error.message?.toLowerCase().includes('already registered')) {
-          setErrorMessage('This email is already registered. Please switch to Sign In.');
+        const msg = error.message || String(error);
+        if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('unique')) {
+          setErrorMessage('This email is already registered. Please click "Sign In instead" below.');
+        } else if (msg.toLowerCase().includes('password')) {
+          setErrorMessage(msg);
         } else {
-          setErrorMessage(error.message || 'Account registration failed. Please try again.');
+          setErrorMessage(msg);
         }
       } else if (user) {
-        setSuccessMessage('Station account created successfully! Entering workspace...');
+        if (session) {
+          setSuccessMessage('Station account created successfully! Entering ERP workspace...');
+        } else {
+          setSuccessMessage('Account registered successfully! If email confirmation is enabled on your Supabase project, please check your inbox to confirm your email before signing in.');
+        }
       }
     } catch (err) {
-      setErrorMessage(err.message || 'An unexpected error occurred during sign up.');
+      console.error('[AuthPortal] Unexpected error during Sign Up:', err);
+      setErrorMessage(err.message || 'An unexpected error occurred while creating your account.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // --- 3. FORGOT PASSWORD HANDLER ---
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     clearMessages();
@@ -154,6 +178,8 @@ export default function AuthPortal() {
     }
 
     setSubmitting(true);
+    console.log('[AuthPortal] Requesting password reset for:', cleanEmail);
+
     try {
       let result;
       if (typeof resetPassword === 'function') {
@@ -163,12 +189,15 @@ export default function AuthPortal() {
         result = await supabase.auth.resetPasswordForEmail(cleanEmail, { redirectTo: redirectUrl });
       }
 
+      console.log('[AuthPortal] Password reset result:', result);
+
       if (result?.error) {
         setErrorMessage(result.error.message || 'Unable to send password reset email.');
       } else {
-        setSuccessMessage(`Password reset link sent to ${cleanEmail}. Please check your inbox.`);
+        setSuccessMessage(`Password recovery link sent to ${cleanEmail}. Please check your inbox.`);
       }
     } catch (err) {
+      console.error('[AuthPortal] Unexpected error during password reset:', err);
       setErrorMessage(err.message || 'Failed to send password reset email.');
     } finally {
       setSubmitting(false);
@@ -182,9 +211,10 @@ export default function AuthPortal() {
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Container Card */}
-      <div className="relative w-full max-w-4xl bg-slate-900/90 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
-        {/* Left Feature Showcase Banner (Desktop) */}
-        <div className="hidden md:flex md:col-span-5 bg-gradient-to-br from-indigo-950/80 via-slate-900 to-slate-950 p-8 flex-col justify-between border-r border-slate-800/80 relative overflow-hidden">
+      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
+        
+        {/* Left Feature Showcase Banner (Dark Indigo Theme) */}
+        <div className="hidden md:flex md:col-span-5 bg-gradient-to-br from-indigo-950/90 via-slate-900 to-slate-950 p-8 flex-col justify-between border-r border-slate-800 relative overflow-hidden">
           <div className="absolute -top-12 -left-12 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl" />
 
           {/* Logo & Brand Header */}
@@ -195,87 +225,100 @@ export default function AuthPortal() {
               </div>
               <div>
                 <h1 className="text-xl font-extrabold tracking-tight text-white">MY PUMP</h1>
-                <p className="text-[10px] uppercase font-bold tracking-widest text-blue-400">Enterprise Cloud ERP</p>
+                <p className="text-[10px] uppercase font-bold tracking-widest text-blue-400">Fuel Station ERP</p>
               </div>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed pt-2">
+            <p className="text-xs text-slate-300 leading-relaxed pt-2">
               Next-generation fuel station management. Dual Jama-Udhar accounting, real-time nozzle readings, and account-isolated cloud synchronization.
             </p>
           </div>
 
           {/* Value Highlights */}
-          <div className="space-y-3.5 z-10 py-6">
-            <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/40">
+          <div className="space-y-3 z-10 py-6">
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
               <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-slate-200">Account-Wise RLS Isolation</p>
-                <p className="text-[11px] text-slate-400">Your station rates, nozzles, and accounts are 100% private to your user ID.</p>
+                <p className="text-xs font-bold text-slate-100">Account-Wise Data Isolation</p>
+                <p className="text-[11px] text-slate-400">Strict Row Level Security (RLS). Every station's data is isolated.</p>
               </div>
             </div>
 
-            <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/40">
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
               <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-slate-200">Live Real-Time Sync</p>
-                <p className="text-[11px] text-slate-400">Offline-first local cache with instant Supabase cloud background sync.</p>
+                <p className="text-xs font-bold text-slate-100">Dual Sync Architecture</p>
+                <p className="text-[11px] text-slate-400">Instant offline local cache with automated Supabase cloud sync.</p>
               </div>
             </div>
 
-            <div className="flex items-start gap-3 p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/40">
+            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
               <Receipt className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-slate-200">Complete Station Books</p>
-                <p className="text-[11px] text-slate-400">Daily Entry, Stock & Sell Patrak, Ushina Khata, and Bank Hisab.</p>
+                <p className="text-xs font-bold text-slate-100">Complete Station Ledger</p>
+                <p className="text-[11px] text-slate-400">Daily Entry, Stock Patrak, Ushina Khata, and Bank Hisab.</p>
               </div>
             </div>
           </div>
 
           {/* Bottom Security Badge */}
-          <div className="z-10 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+          <div className="z-10 pt-4 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-medium">
             <span>Enterprise Security 256-bit</span>
-            <span className="flex items-center gap-1 text-emerald-400 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-              Cloud Live
+            <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              Cloud Connected
             </span>
           </div>
         </div>
 
-        {/* Right Authentication Form Area */}
-        <div className="md:col-span-7 p-6 sm:p-10 flex flex-col justify-center">
-          {/* Top Form Header */}
+        {/* Right Authentication Form Area - Crisp Clean Pure White Background */}
+        <div className="md:col-span-7 bg-white text-slate-900 p-6 sm:p-10 flex flex-col justify-center shadow-lg">
+          
+          {/* Supabase API Key Configuration Warning (if env keys missing) */}
+          {!isEnvConfigured && !isSupabaseConfigured && (
+            <div className="mb-5 p-3.5 rounded-xl bg-red-50 border border-red-300 text-red-800 text-xs flex items-start gap-2.5 shadow-xs">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="leading-snug">
+                <span className="font-bold block">Supabase API Keys Missing in .env!</span>
+                Please add <code className="font-mono bg-red-100 px-1 py-0.5 rounded text-[11px]">VITE_SUPABASE_URL</code> and <code className="font-mono bg-red-100 px-1 py-0.5 rounded text-[11px]">VITE_SUPABASE_ANON_KEY</code> to your <code className="font-mono bg-red-100 px-1 py-0.5 rounded text-[11px]">.env</code> file and restart the dev server.
+              </div>
+            </div>
+          )}
+
+          {/* Top Form Header with Crisp Dark Text */}
           <div className="mb-6">
             {mode === 'signin' && (
               <>
-                <h2 className="text-2xl font-black text-white tracking-tight">Sign In to Your Station</h2>
-                <p className="text-xs text-slate-400 mt-1">Enter your station credentials to access the ERP dashboard</p>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Sign In to Station</h2>
+                <p className="text-xs text-slate-500 font-medium mt-1">Enter your station credentials to open the ERP workspace</p>
               </>
             )}
             {mode === 'signup' && (
               <>
-                <h2 className="text-2xl font-black text-white tracking-tight">Register New Station</h2>
-                <p className="text-xs text-slate-400 mt-1">Create an isolated cloud workspace for your petrol pump</p>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Register New Station</h2>
+                <p className="text-xs text-slate-500 font-medium mt-1">Create an isolated cloud workspace for your petrol pump</p>
               </>
             )}
             {mode === 'forgot' && (
               <>
-                <h2 className="text-2xl font-black text-white tracking-tight">Reset Password</h2>
-                <p className="text-xs text-slate-400 mt-1">Enter your registered email to receive a secure recovery link</p>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Reset Password</h2>
+                <p className="text-xs text-slate-500 font-medium mt-1">Enter your registered email to receive a secure recovery link</p>
               </>
             )}
           </div>
 
-          {/* Error & Success Banners */}
-          {errorMessage && (
-            <div className="mb-4 p-3 rounded-xl bg-rose-950/60 border border-rose-800/60 text-rose-300 text-xs flex items-start gap-2.5 animate-fadeIn">
-              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400 mt-0.5" />
-              <div className="leading-snug">{errorMessage}</div>
+          {/* Success Banner */}
+          {successMessage && (
+            <div className="mb-4 p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs flex items-start gap-2.5 shadow-xs animate-fadeIn font-medium">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+              <div className="leading-snug">{successMessage}</div>
             </div>
           )}
 
-          {successMessage && (
-            <div className="mb-4 p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 text-xs flex items-start gap-2.5 animate-fadeIn">
-              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
-              <div className="leading-snug">{successMessage}</div>
+          {/* Error Banner - High Contrast Bright Red Box */}
+          {errorMessage && (
+            <div className="mb-4 p-3.5 rounded-xl bg-red-50 border border-red-400 text-red-700 text-xs flex items-start gap-2.5 shadow-xs animate-fadeIn font-medium">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600 mt-0.5" />
+              <div className="leading-snug">{errorMessage}</div>
             </div>
           )}
 
@@ -283,8 +326,8 @@ export default function AuthPortal() {
           {mode === 'signin' && (
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
-                  Station Email
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Station Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -294,20 +337,20 @@ export default function AuthPortal() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="station@mypump.com"
-                    className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                   />
                 </div>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                     Password
                   </label>
                   <button
                     type="button"
                     onClick={() => switchMode('forgot')}
-                    className="text-xs text-blue-400 hover:text-blue-300 transition-colors font-medium cursor-pointer"
+                    className="text-xs text-blue-600 hover:text-blue-800 font-bold transition-colors cursor-pointer"
                   >
                     Forgot Password?
                   </button>
@@ -320,12 +363,12 @@ export default function AuthPortal() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all font-mono"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -335,12 +378,12 @@ export default function AuthPortal() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-[0.99] text-white font-extrabold text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Signing In...</span>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Signing In to Station...</span>
                   </>
                 ) : (
                   <>
@@ -350,12 +393,12 @@ export default function AuthPortal() {
                 )}
               </button>
 
-              <div className="pt-4 text-center border-t border-slate-800 text-xs text-slate-400">
+              <div className="pt-4 text-center border-t border-slate-100 text-xs text-slate-600 font-medium">
                 Don't have a station account?{' '}
                 <button
                   type="button"
                   onClick={() => switchMode('signup')}
-                  className="font-bold text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                  className="font-extrabold text-blue-600 hover:text-blue-800 underline cursor-pointer"
                 >
                   Create New Station Account
                 </button>
@@ -368,7 +411,7 @@ export default function AuthPortal() {
             <form onSubmit={handleSignUp} className="space-y-3.5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                     Station / Pump Name *
                   </label>
                   <div className="relative">
@@ -379,13 +422,13 @@ export default function AuthPortal() {
                       value={stationName}
                       onChange={(e) => setStationName(e.target.value)}
                       placeholder="e.g. SHITAL PETROL PUMP"
-                      className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all uppercase"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all uppercase shadow-2xs"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                     Owner / Manager Name *
                   </label>
                   <div className="relative">
@@ -396,7 +439,7 @@ export default function AuthPortal() {
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
                       placeholder="e.g. Rajesh Patel"
-                      className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -404,7 +447,7 @@ export default function AuthPortal() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                     Station Email *
                   </label>
                   <div className="relative">
@@ -415,13 +458,13 @@ export default function AuthPortal() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="station@mypump.com"
-                      className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                     Mobile / Contact (Optional)
                   </label>
                   <div className="relative">
@@ -431,7 +474,7 @@ export default function AuthPortal() {
                       value={mobile}
                       onChange={(e) => setMobile(e.target.value)}
                       placeholder="9876543210"
-                      className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all font-mono"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -439,7 +482,7 @@ export default function AuthPortal() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                     Password (Min 6 chars) *
                   </label>
                   <div className="relative">
@@ -450,13 +493,13 @@ export default function AuthPortal() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all font-mono"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1">
                     Confirm Password *
                   </label>
                   <div className="relative">
@@ -467,7 +510,7 @@ export default function AuthPortal() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all font-mono"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -476,11 +519,11 @@ export default function AuthPortal() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 active:scale-[0.99] text-white font-extrabold text-xs shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Creating Station Account...</span>
                   </>
                 ) : (
@@ -491,12 +534,12 @@ export default function AuthPortal() {
                 )}
               </button>
 
-              <div className="pt-3 text-center border-t border-slate-800 text-xs text-slate-400">
+              <div className="pt-3 text-center border-t border-slate-100 text-xs text-slate-600 font-medium">
                 Already have a station account?{' '}
                 <button
                   type="button"
                   onClick={() => switchMode('signin')}
-                  className="font-bold text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                  className="font-extrabold text-blue-600 hover:text-blue-800 underline cursor-pointer"
                 >
                   Sign In instead
                 </button>
@@ -508,8 +551,8 @@ export default function AuthPortal() {
           {mode === 'forgot' && (
             <form onSubmit={handleForgotPassword} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
-                  Registered Station Email
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Registered Station Email Address
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -519,7 +562,7 @@ export default function AuthPortal() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="station@mypump.com"
-                    className="w-full bg-slate-950/60 border border-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 outline-none transition-all"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                   />
                 </div>
               </div>
@@ -527,11 +570,11 @@ export default function AuthPortal() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
                     <span>Sending Recovery Link...</span>
                   </>
                 ) : (
@@ -542,12 +585,12 @@ export default function AuthPortal() {
                 )}
               </button>
 
-              <div className="pt-3 text-center border-t border-slate-800 text-xs text-slate-400">
+              <div className="pt-3 text-center border-t border-slate-100 text-xs text-slate-600 font-medium">
                 Remember your password?{' '}
                 <button
                   type="button"
                   onClick={() => switchMode('signin')}
-                  className="font-bold text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                  className="font-extrabold text-blue-600 hover:text-blue-800 underline cursor-pointer"
                 >
                   Back to Sign In
                 </button>
