@@ -44,6 +44,7 @@
     }
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
     "@tailwindcss/vite": "^4.3.3",
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",

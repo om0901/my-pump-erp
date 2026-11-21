@@ -1087,8 +1087,20 @@ export async function syncDailyEntryToModules(shiftDate, shiftType, dailyData) {
                   let cat = (inc.category || '').trim().toLowerCase();
                   const desc = (inc.description || '').trim().toLowerCase();
                   const pName = (inc.partyName || '').trim().toLowerCase();
+                  const accId = (inc.accountId || '').trim().toLowerCase();
+                  const currentAccId = (acc.id || '').trim().toLowerCase();
+
                   if (!cat && !pName && aIdx === 0) cat = accName;
-                  return cat === accName || pName === accName || desc === accName || (cat === 'ushina khata' && desc === accName) || (cat === 'ushina' && desc === accName);
+                  return (
+                    cat === accName ||
+                    pName === accName ||
+                    (accId && accId === currentAccId) ||
+                    desc === accName ||
+                    (cat === 'ushina khata' && desc === accName) ||
+                    (cat === 'ushina' && desc === accName) ||
+                    (cat === 'other income' && desc === accName) ||
+                    currentUshina.length === 1
+                  );
                 })
                 .map((inc, iIdx) => ({
                   id: `jama-shift-${activeDate}-${activeShift}-${inc.id || iIdx}`,

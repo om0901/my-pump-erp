@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { syncStationDataToCloud } from '../../services/supabaseSyncService';
 import { db } from '../../db/database';
 import {
   UserCheck,
@@ -66,6 +68,7 @@ const getDaysInMonth = (yearMonthStr) => {
 };
 
 export default function StaffAttendance() {
+  const { currentUser } = useAuth();
   const { selectedDate, showToast, stationProfile } = useApp();
   const [loading, setLoading] = useState(true);
 
@@ -231,6 +234,14 @@ export default function StaffAttendance() {
           data: updatedAdvMap,
           updatedAt: new Date().toISOString()
         });
+      }
+
+      // Supabase Cloud Attendance & Roster Sync
+      if (currentUser?.id) {
+        syncStationDataToCloud(currentUser.id, {
+          staffRoster: updatedRoster,
+          lastAttendanceSavedAt: new Date().toISOString()
+        }).catch(err => console.warn('Supabase cloud attendance sync error:', err));
       }
     } catch (err) {
       console.error('Error auto-persisting attendance:', err);

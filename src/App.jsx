@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import AuthModal from './components/auth/AuthModal';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
@@ -24,6 +24,7 @@ import { useExcelNavigation } from './hooks/useExcelNavigation';
 
 function AppContent() {
   const { activeTab, dbReady, toastMessage } = useApp();
+  const { authLoading, isAuthenticated } = useAuth();
 
   // Attach Universal Excel-style 4-arrow key & Enter keyboard navigation across all modules
   useExcelNavigation();
@@ -148,11 +149,11 @@ function AppContent() {
     localStorage.setItem('mypump_sidebar_width', nextWidth.toString());
   };
 
-  if (!dbReady) {
+  if (authLoading || !dbReady) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white font-bold text-sm space-y-3">
         <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
-        <div>Initializing MY PUMP ERP System...</div>
+        <div className="text-slate-200">Connecting to MY PUMP Cloud Station...</div>
       </div>
     );
   }

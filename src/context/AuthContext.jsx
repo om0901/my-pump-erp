@@ -1,45 +1,38 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext();
 
-export const DEFAULT_USER_PROFILE = {
-  id: 'usr_demo_1',
-  email: 'info@shitalpetroleum.com',
-  mobile: '+91 98790 12345',
-  fuelStationName: 'SHITAL PETROL PUMP',
-  gstin: '24AAAAA0000A1Z5',
-  address: 'State Highway, Kheralu, Mehsana, Gujarat 384325',
-  ownerName: 'Owner',
-  managerName: 'Shift Manager',
-  openingShreeSilak: 50000
-};
-
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('mypump_current_user');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') {
-          return { ...DEFAULT_USER_PROFILE, ...parsed };
-        }
-      }
-    } catch (e) {}
-    return DEFAULT_USER_PROFILE;
-  });
-
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const saved = localStorage.getItem('mypump_authenticated');
-    return saved !== null ? saved === 'true' : true; // Default logged in so software opens seamlessly
-  });
+  const [currentUser, setCurrentUser] = useState(null);
+  const [session, setSession] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
 
   // authModalMode: null | 'login' | 'signup'
   const [authModalMode, setAuthModalMode] = useState(null);
 
+  // Helper to construct a clean user profile from Supabase User & Metadata
+  const mapSupabaseUser = (user) => {
+    if (!user) return null;
+    const meta = user.user_metadata || {};
+    return {
+      id: user.id,
+      email: user.email,
+      fuelStationName: meta.fuelStationName || 'SHITAL PETROL PUMP',
+      ownerName: meta.ownerName || 'Station Owner',
+      managerName: meta.managerName || 'Shift Manager',
+      mobile: meta.mobile || '',
+      gstin: meta.gstin || '',
+      address: meta.address || '',
+      openingShreeSilak: parseFloat(meta.openingShreeSilak) || 0,
+      createdAt: user.created_at
+    };
+  };
+
+  // Sync station profile with localStorage whenever currentUser changes
   useEffect(() => {
     if (currentUser) {
-      localStorage.setItem('mypump_current_user', JSON.stringify(currentUser));
-      // Keep station profile synced in localStorage
       const stationProf = {
         fuelStationName: currentUser.fuelStationName,
         gstin: currentUser.gstin,
@@ -51,48 +44,167 @@ export function AuthProvider({ children }) {
         openingShreeSilak: currentUser.openingShreeSilak
       };
       localStorage.setItem('station_profile', JSON.stringify(stationProf));
+      localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(stationProf));
     }
   }, [currentUser]);
 
-  const login = (emailOrMobile, password) => {
-    // Authenticate user & hydrate profile
-    const existing = currentUser || DEFAULT_USER_PROFILE;
-    const updatedUser = {
-      ...existing,
-      email: emailOrMobile.includes('@') ? emailOrMobile : existing.email,
-      mobile: !emailOrMobile.includes('@') ? emailOrMobile : existing.mobile,
+  // Initial session restoration and real-time auth state listener
+  useEffect(() => {
+    let mounted = true;
+
+    const initAuth = async () => {
+      try {
+        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('[AuthContext] Error restoring session:', error.message);
+        }
+
+        if (mounted) {
+          if (initialSession?.user) {
+            setSession(initialSession);
+            setCurrentUser(mapSupabaseUser(initialSession.user));
+            setIsAuthenticated(true);
+            setAuthModalMode(null);
+          } else {
+            setSession(null);
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+            setAuthModalMode('login'); // Mandatory login overlay when logged out
+          }
+        }
+      } catch (err) {
+        console.error('[AuthContext] Session init error:', err);
+        if (mounted) {
+          setIsAuthenticated(false);
+          setAuthModalMode('login');
+        }
+      } finally {
+        if (mounted) setAuthLoading(false);
+      }
     };
-    setCurrentUser(updatedUser);
-    setIsAuthenticated(true);
-    localStorage.setItem('mypump_authenticated', 'true');
-    setAuthModalMode(null);
-    return updatedUser;
+
+    initAuth();
+
+    // Listen for auth changes (sign in, sign out, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!mounted) return;
+      if (newSession?.user) {
+        setSession(newSession);
+        setCurrentUser(mapSupabaseUser(newSession.user));
+        setIsAuthenticated(true);
+        setAuthModalMode(null);
+      } else {
+        setSession(null);
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        setAuthModalMode('login');
+      }
+      setAuthLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe();
+    };
+  }, []);
+
+  /**
+   * Enterprise Supabase Sign In with Email and Password
+   */
+  const login = async (email, password) => {
+    setAuthLoading(true);
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password.trim()
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.user) {
+        const mapped = mapSupabaseUser(data.user);
+        setCurrentUser(mapped);
+        setSession(data.session);
+        setIsAuthenticated(true);
+        setAuthModalMode(null);
+        return { user: mapped, error: null };
+      }
+      return { user: null, error: new Error('No user returned') };
+    } catch (err) {
+      console.error('[AuthContext] Login error:', err);
+      return { user: null, error: err };
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
-  const signup = (formData) => {
-    const newUser = {
-      id: `usr_${Date.now()}`,
-      email: formData.email || 'pump@station.com',
-      mobile: formData.mobile || '+91 98765 43210',
-      fuelStationName: formData.fuelStationName?.trim() || 'SHITAL PETROL PUMP',
-      gstin: formData.gstin?.trim() || '24AAAAA0000A1Z5',
-      address: formData.address?.trim() || 'State Highway, Kheralu',
-      ownerName: formData.ownerName?.trim() || 'Station Owner',
-      managerName: formData.managerName?.trim() || 'Shift Manager',
-      openingShreeSilak: parseFloat(formData.openingShreeSilak) || 0
-    };
+  /**
+   * Enterprise Supabase Sign Up with Petrol Pump Profile Metadata
+   */
+  const signup = async (formData) => {
+    setAuthLoading(true);
+    try {
+      const cleanEmail = formData.email?.trim().toLowerCase();
+      const password = formData.password?.trim();
 
-    setCurrentUser(newUser);
-    setIsAuthenticated(true);
-    localStorage.setItem('mypump_authenticated', 'true');
-    setAuthModalMode(null);
-    return newUser;
+      const userMetadata = {
+        fuelStationName: formData.fuelStationName?.trim() || 'SHITAL PETROL PUMP',
+        ownerName: formData.ownerName?.trim() || 'Station Owner',
+        managerName: formData.managerName?.trim() || 'Shift Manager',
+        mobile: formData.mobile?.trim() || '',
+        gstin: formData.gstin?.trim() || '',
+        address: formData.address?.trim() || '',
+        openingShreeSilak: parseFloat(formData.openingShreeSilak) || 0
+      };
+
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password: password,
+        options: {
+          data: userMetadata
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.user) {
+        const mapped = mapSupabaseUser(data.user);
+        setCurrentUser(mapped);
+        setSession(data.session);
+        setIsAuthenticated(true);
+        setAuthModalMode(null);
+        return { user: mapped, session: data.session, error: null };
+      }
+      return { user: null, error: new Error('User creation failed') };
+    } catch (err) {
+      console.error('[AuthContext] Signup error:', err);
+      return { user: null, error: err };
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    localStorage.setItem('mypump_authenticated', 'false');
-    setAuthModalMode('login');
+  /**
+   * Enterprise Supabase Sign Out
+   */
+  const logout = async () => {
+    setAuthLoading(true);
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[AuthContext] SignOut warning:', err);
+    } finally {
+      setCurrentUser(null);
+      setSession(null);
+      setIsAuthenticated(false);
+      setAuthModalMode('login');
+      setAuthLoading(false);
+    }
   };
 
   const openAuthModal = (mode = 'login') => {
@@ -100,7 +212,10 @@ export function AuthProvider({ children }) {
   };
 
   const closeAuthModal = () => {
-    setAuthModalMode(null);
+    // Only allow closing if already authenticated
+    if (isAuthenticated) {
+      setAuthModalMode(null);
+    }
   };
 
   return (
@@ -108,8 +223,10 @@ export function AuthProvider({ children }) {
       value={{
         currentUser,
         setCurrentUser,
+        session,
         isAuthenticated,
         setIsAuthenticated,
+        authLoading,
         authModalMode,
         setAuthModalMode,
         login,
@@ -127,16 +244,7 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    return {
-      currentUser: DEFAULT_USER_PROFILE,
-      isAuthenticated: true,
-      authModalMode: null,
-      login: () => {},
-      signup: () => {},
-      logout: () => {},
-      openAuthModal: () => {},
-      closeAuthModal: () => {}
-    };
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }

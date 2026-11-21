@@ -23,7 +23,7 @@ import {
 
 export default function Sidebar({ width = 260 }) {
   const { activeTab, setActiveTab } = useApp();
-  const { openAuthModal } = useAuth();
+  const { isAuthenticated, openAuthModal } = useAuth();
   const isCompact = width < 140;
 
   const menuItems = [
@@ -102,43 +102,52 @@ export default function Sidebar({ width = 260 }) {
         })}
       </nav>
 
-      {/* Quick Auth Action Buttons in Sidebar */}
+      {/* Auth Status & Action Buttons in Sidebar */}
       <div className="pt-2 border-t border-[#1a2335] bg-[#0c121d] space-y-1.5 px-1">
-        {!isCompact ? (
-          <div className="grid grid-cols-2 gap-1.5">
-            <button type="button"
-              onClick={() => openAuthModal('login')}
-              className="px-2 py-1.5 rounded-lg bg-[#172033] hover:bg-[#1f2b45] text-blue-400 border border-blue-500/30 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer"
-            >
-              <LogIn className="w-3 h-3" />
-              <span>Login</span>
-            </button>
+        {!isAuthenticated ? (
+          !isCompact ? (
+            <div className="grid grid-cols-2 gap-1.5">
+              <button type="button"
+                onClick={() => openAuthModal('login')}
+                className="px-2 py-1.5 rounded-lg bg-[#172033] hover:bg-[#1f2b45] text-blue-400 border border-blue-500/30 font-bold text-[11px] flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <LogIn className="w-3 h-3" />
+                <span>Login</span>
+              </button>
 
-            <button type="button"
-              onClick={() => openAuthModal('signup')}
-              className="px-2 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-extrabold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
-            >
-              <UserPlus className="w-3 h-3" />
-              <span>Sign Up</span>
-            </button>
-          </div>
+              <button type="button"
+                onClick={() => openAuthModal('signup')}
+                className="px-2 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white font-extrabold text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+              >
+                <UserPlus className="w-3 h-3" />
+                <span>Sign Up</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-1">
+              <button type="button"
+                onClick={() => openAuthModal('login')}
+                className="p-1.5 rounded-lg bg-[#172033] text-blue-400 hover:bg-[#1f2b45]"
+                title="Login"
+              >
+                <LogIn className="w-4 h-4" />
+              </button>
+              <button type="button"
+                onClick={() => openAuthModal('signup')}
+                className="p-1.5 rounded-lg bg-orange-600 text-white hover:bg-orange-700"
+                title="Sign Up"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
+            </div>
+          )
         ) : (
-          <div className="flex flex-col items-center gap-1">
-            <button type="button"
-              onClick={() => openAuthModal('login')}
-              className="p-1.5 rounded-lg bg-[#172033] text-blue-400 hover:bg-[#1f2b45]"
-              title="Login"
-            >
-              <LogIn className="w-4 h-4" />
-            </button>
-            <button type="button"
-              onClick={() => openAuthModal('signup')}
-              className="p-1.5 rounded-lg bg-orange-600 text-white hover:bg-orange-700"
-              title="Sign Up"
-            >
-              <UserPlus className="w-4 h-4" />
-            </button>
-          </div>
+          !isCompact && (
+            <div className="text-[11px] font-semibold text-emerald-400 flex items-center justify-center gap-1.5 py-1 bg-emerald-950/30 rounded-lg border border-emerald-900/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Cloud Connected</span>
+            </div>
+          )
         )}
 
         {!isCompact ? (

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useApp } from '../../context/AppContext';
+import { useAuth } from '../../context/AuthContext';
+import { syncStationDataToCloud } from '../../services/supabaseSyncService';
 import { db } from '../../db/database';
 import { syncSectionBToLubricants, syncDailyEntryToModules, syncNozzlesToStockPatrak, calculateLubricantRowTotal, saveShiftSnapshotToArchive, getShiftSnapshotForDate } from '../../db/storageService';
 import { processShiftSave } from '../../services/shiftPipelineService';
@@ -51,6 +53,7 @@ import HistoricalBanner from '../common/HistoricalBanner';
 import { persistShiftClosure } from '../../services/dbStorageService';
 
 export default function MasterDailySheet() {
+  const { currentUser } = useAuth();
   const {
     selectedDate,
     setSelectedDate,
@@ -1505,12 +1508,14 @@ export default function MasterDailySheet() {
       const uList = (Array.isArray(ushinaDirectoryList) && ushinaDirectoryList.length > 0)
         ? ushinaDirectoryList
         : (Array.isArray(ushinaDirectory) && ushinaDirectory.length > 0 ? ushinaDirectory : []);
-      const defaultName = uList[0]?.name || 'om';
+      const defaultParty = uList[0] || { id: 'ush-1', name: 'om' };
       setOtherIncomeEntries(prev => [
         ...(Array.isArray(prev) ? prev : []),
         {
           id: Date.now() + Math.random(),
-          category: defaultName,
+          accountId: defaultParty.id,
+          partyName: defaultParty.name,
+          category: defaultParty.name,
           description: '',
           amount: 0
         }
@@ -2498,8 +2503,20 @@ export default function MasterDailySheet() {
                   let cat = (inc.category || '').trim().toLowerCase();
                   const desc = (inc.description || '').trim().toLowerCase();
                   const pName = (inc.partyName || '').trim().toLowerCase();
+                  const accId = (inc.accountId || '').trim().toLowerCase();
+                  const currentAccId = (acc.id || '').trim().toLowerCase();
+
                   if (!cat && !pName && aIdx === 0) cat = accName;
-                  return cat === accName || pName === accName || desc === accName || (cat === 'ushina khata' && desc === accName) || (cat === 'ushina' && desc === accName);
+                  return (
+                    cat === accName ||
+                    pName === accName ||
+                    (accId && accId === currentAccId) ||
+                    desc === accName ||
+                    (cat === 'ushina khata' && desc === accName) ||
+                    (cat === 'ushina' && desc === accName) ||
+                    (cat === 'other income' && desc === accName) ||
+                    currentUshina.length === 1
+                  );
                 })
                 .map((inc, iIdx) => ({
                   id: `jama-shift-${selectedDate}-${activeShift}-${inc.id || iIdx}`,
@@ -2688,6 +2705,19 @@ export default function MasterDailySheet() {
 
       window.dispatchEvent(new Event('pump_product_catalog_updated'));
       window.dispatchEvent(new Event('lubricant_matrix_updated'));
+
+      // Supabase Cloud Shift Snapshot Sync
+      if (currentUser?.id) {
+        syncStationDataToCloud(currentUser.id, {
+          date: selectedDate,
+          shiftId: activeShift,
+          fuelRates: rates,
+          nozzles,
+          dips,
+          stationProfile,
+          lastSavedAt: new Date().toISOString()
+        }).catch(err => console.warn('Supabase cloud shift sync error:', err));
+      }
 
       showToast('✅ Daily Shift Saved & Section B Lubricants Synced to Monthly Matrix!', 'success');
     } catch (err) {
@@ -3528,7 +3558,8 @@ export default function MasterDailySheet() {
             <div className="space-y-1.5">
               {otherIncomeEntries.map((i, idx) => {
                 const partyList = (Array.isArray(ushinaDirectoryList) && ushinaDirectoryList.length > 0) ? ushinaDirectoryList : ushinaDirectory;
-                const currentCategory = i.category || (partyList[0]?.name || 'om');
+                const activeParty = partyList.find(p => p.id === i.accountId || p.name === i.category || p.name === i.partyName) || partyList[0] || { id: 'ush-1', name: 'om' };
+                const currentCategory = i.category || activeParty.name;
 
                 return (
                   <div key={i.id || `inc-${idx}`} className="p-2 rounded-lg bg-[#0e1420] border border-[#1b2537] grid grid-cols-12 gap-2 text-xs items-center">
@@ -3537,8 +3568,14 @@ export default function MasterDailySheet() {
                         value={currentCategory}
                         onChange={(e) => {
                           const val = e.target.value;
+                          const selectedAcc = partyList.find(p => p.name === val) || null;
                           const updated = [...otherIncomeEntries];
-                          updated[idx] = { ...updated[idx], category: val };
+                          updated[idx] = {
+                            ...updated[idx],
+                            category: val,
+                            partyName: val,
+                            accountId: selectedAcc?.id || updated[idx]?.accountId || null
+                          };
                           setOtherIncomeEntries(updated);
                         }}
                         className="w-full bg-[#172033] border border-[#23304a] rounded px-2 py-1 text-slate-100 text-xs outline-none cursor-pointer font-medium"
@@ -3564,6 +3601,8 @@ export default function MasterDailySheet() {
                           updated[idx] = {
                             ...updated[idx],
                             category: updated[idx]?.category || currentCategory,
+                            partyName: updated[idx]?.partyName || currentCategory,
+                            accountId: updated[idx]?.accountId || activeParty?.id || null,
                             description: val
                           };
                           setOtherIncomeEntries(updated);
@@ -3581,6 +3620,8 @@ export default function MasterDailySheet() {
                           updated[idx] = {
                             ...updated[idx],
                             category: updated[idx]?.category || currentCategory,
+                            partyName: updated[idx]?.partyName || currentCategory,
+                            accountId: updated[idx]?.accountId || activeParty?.id || null,
                             amount: numVal
                           };
                           setOtherIncomeEntries(updated);

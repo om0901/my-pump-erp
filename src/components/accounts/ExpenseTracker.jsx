@@ -228,11 +228,44 @@ export default function ExpenseTracker() {
 
   useEffect(() => {
     const activeList = Array.isArray(ushinaDirectoryList) ? ushinaDirectoryList : ushinaDirectory;
-    if (Array.isArray(activeList)) {
-      setUshinaAccounts(activeList);
-      if (activeList.length === 0) {
-        setSelectedUshinaId(null);
-      } else if (!selectedUshinaId || !activeList.some(a => a.id === selectedUshinaId)) {
+    if (Array.isArray(activeList) && activeList.length > 0) {
+      setUshinaAccounts(prev => {
+        const prevList = Array.isArray(prev) && prev.length > 0 ? prev : [];
+        let savedList = [];
+        try {
+          const s = localStorage.getItem('ushina_accounts') || localStorage.getItem('pump_ushina_directory');
+          if (s) {
+            const p = JSON.parse(s);
+            if (Array.isArray(p)) savedList = p;
+          }
+        } catch (e) {}
+
+        const merged = activeList.map(activeAcc => {
+          const activeCleanName = (activeAcc.name || '').trim().toLowerCase();
+          const existingInPrev = prevList.find(p => p.id === activeAcc.id || (p.name && p.name.trim().toLowerCase() === activeCleanName));
+          const existingInSaved = savedList.find(s => s.id === activeAcc.id || (s.name && s.name.trim().toLowerCase() === activeCleanName));
+
+          const prevJama = Array.isArray(existingInPrev?.jamaEntries) && existingInPrev.jamaEntries.length > 0 ? existingInPrev.jamaEntries : [];
+          const savedJama = Array.isArray(existingInSaved?.jamaEntries) && existingInSaved.jamaEntries.length > 0 ? existingInSaved.jamaEntries : [];
+          const activeJama = Array.isArray(activeAcc.jamaEntries) && activeAcc.jamaEntries.length > 0 ? activeAcc.jamaEntries : [];
+          const bestJama = activeJama.length >= Math.max(prevJama.length, savedJama.length) ? activeJama : (prevJama.length >= savedJama.length ? prevJama : savedJama);
+
+          const prevUdhar = Array.isArray(existingInPrev?.udharEntries) && existingInPrev.udharEntries.length > 0 ? existingInPrev.udharEntries : [];
+          const savedUdhar = Array.isArray(existingInSaved?.udharEntries) && existingInSaved.udharEntries.length > 0 ? existingInSaved.udharEntries : [];
+          const activeUdhar = Array.isArray(activeAcc.udharEntries) && activeAcc.udharEntries.length > 0 ? activeAcc.udharEntries : [];
+          const bestUdhar = activeUdhar.length >= Math.max(prevUdhar.length, savedUdhar.length) ? activeUdhar : (prevUdhar.length >= savedUdhar.length ? prevUdhar : savedUdhar);
+
+          return {
+            ...activeAcc,
+            openingBalance: activeAcc.openingBalance !== undefined ? activeAcc.openingBalance : (existingInPrev?.openingBalance ?? existingInSaved?.openingBalance ?? 0),
+            jamaEntries: bestJama,
+            udharEntries: bestUdhar
+          };
+        });
+        return merged;
+      });
+
+      if (!selectedUshinaId || !activeList.some(a => a.id === selectedUshinaId)) {
         setSelectedUshinaId(activeList[0].id);
       }
     }
@@ -325,6 +358,7 @@ export default function ExpenseTracker() {
             let changed = false;
             const updated = list.map((acc, aIdx) => {
               const accName = (acc.name || '').trim().toLowerCase();
+              const accId = (acc.id || '').trim().toLowerCase();
               let newJama = [...(acc.jamaEntries || [])];
               let newUdhar = [...(acc.udharEntries || [])];
 
@@ -335,8 +369,17 @@ export default function ExpenseTracker() {
                 let cat = (inc.category || '').trim().toLowerCase();
                 const desc = (inc.description || '').trim().toLowerCase();
                 const pName = (inc.partyName || '').trim().toLowerCase();
-                if (!cat && !pName && aIdx === 0) cat = accName;
-                if (cat === accName || pName === accName || desc === accName || (cat === 'ushina khata' && desc === accName) || (cat === 'ushina' && desc === accName)) {
+                const incAccId = (inc.accountId || '').trim().toLowerCase();
+
+                const isDirectMatch = cat === accName || pName === accName || (incAccId && incAccId === accId);
+                const isDescMatch = desc === accName;
+                const isGenericCategoryMatch = (
+                  (cat === 'ushina khata' || cat === 'ushina' || cat === 'other income') &&
+                  (desc === accName || (!desc && (aIdx === 0 || list.length === 1)))
+                );
+                const isSingleAccountFallback = list.length === 1;
+
+                if (isDirectMatch || isDescMatch || isGenericCategoryMatch || isSingleAccountFallback) {
                   const entryKey = `jama-shift-${inc.date}-${inc.shiftId || 'Day'}-${inc.id}`;
                   if (!newJama.some(j => j.id === entryKey || (j.date === inc.date && parseFloat(j.amount) === amt && j.fromDailyShift))) {
                     newJama.push({
@@ -357,7 +400,7 @@ export default function ExpenseTracker() {
                 if (amt <= 0) return;
                 const cat = (exp.category || '').trim().toLowerCase();
                 const desc = (exp.description || '').trim().toLowerCase();
-                if ((cat === 'ushina khata' || cat === 'ushina') && (desc === accName || (!desc && aIdx === 0))) {
+                if ((cat === 'ushina khata' || cat === 'ushina') && (desc === accName || (!desc && (aIdx === 0 || list.length === 1)))) {
                   const entryKey = `udhar-shift-${exp.date}-${exp.shiftId || 'Day'}-${exp.id}`;
                   if (!newUdhar.some(u => u.id === entryKey || (u.date === exp.date && parseFloat(u.amount) === amt && u.fromDailyShift))) {
                     newUdhar.push({
@@ -374,6 +417,10 @@ export default function ExpenseTracker() {
 
               return { ...acc, jamaEntries: newJama, udharEntries: newUdhar };
             });
+
+            if (changed) {
+              saveUshinaAccountsToDb(updated);
+            }
             return changed ? updated : prev;
           });
         }
@@ -488,6 +535,7 @@ export default function ExpenseTracker() {
 
     return baseList.map((acc, accIdx) => {
       const accNameClean = (acc.name || '').trim().toLowerCase();
+      const accIdClean = (acc.id || '').trim().toLowerCase();
 
       // Check if current shift was already committed to stored records
       const isShiftSavedUdhar = (acc.udharEntries || []).some(
@@ -504,7 +552,7 @@ export default function ExpenseTracker() {
           if (amt <= 0) return false;
           const cat = (exp.category || '').trim().toLowerCase();
           const desc = (exp.description || '').trim().toLowerCase();
-          return (cat === 'ushina khata' || cat === 'ushina') && (desc === accNameClean || (!desc && accIdx === 0));
+          return (cat === 'ushina khata' || cat === 'ushina') && (desc === accNameClean || (!desc && (accIdx === 0 || baseList.length === 1)));
         })
         .map((exp, idx) => ({
           id: `live-secg-ushina-${exp.id !== undefined ? exp.id : idx}`,
@@ -522,20 +570,25 @@ export default function ExpenseTracker() {
           let cat = (inc.category || '').trim().toLowerCase();
           const desc = (inc.description || '').trim().toLowerCase();
           const pName = (inc.partyName || '').trim().toLowerCase();
+          const accId = (inc.accountId || '').trim().toLowerCase();
 
-          // Fallback if category is empty: if this is the first Ushina account, it defaulted to this
-          if (!cat && !pName && accIdx === 0) {
-            cat = accNameClean;
-          }
-
-          return (
+          // Direct account match by ID, Name or PartyName
+          const isDirectMatch = (
             cat === accNameClean ||
             pName === accNameClean ||
-            desc === accNameClean ||
-            (cat === 'ushina khata' && desc === accNameClean) ||
-            (cat === 'ushina' && desc === accNameClean) ||
-            (cat === 'other income' && desc === accNameClean)
+            (accId && accId === accIdClean)
           );
+          // Remarks or description contains account name
+          const isDescMatch = desc === accNameClean;
+          // Generic category match: category is "ushina khata", "ushina", or "other income"
+          const isCategoryMatch = (
+            (cat === 'ushina khata' || cat === 'ushina' || cat === 'other income') &&
+            (desc === accNameClean || (!desc && (accIdx === 0 || baseList.length === 1)))
+          );
+          // Single account fallback: If only 1 Ushina account registered, any Section D entry routes here
+          const isSingleAccountFallback = baseList.length === 1;
+
+          return isDirectMatch || isDescMatch || isCategoryMatch || isSingleAccountFallback;
         })
         .map((inc, idx) => ({
           id: `live-secd-ushina-${inc.id !== undefined ? inc.id : idx}`,

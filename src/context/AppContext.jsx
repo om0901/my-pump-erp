@@ -4,6 +4,7 @@ import { syncSectionBToLubricants, getShiftSnapshotForDate, getLatestPreviousShi
 import { getMasterBankAccounts, saveMasterBankAccounts, DEFAULT_PUMP_BANKS } from '../utils/bankMaster';
 import { getMasterParties, saveMasterParties } from '../utils/partyMaster';
 import { useAuth } from './AuthContext';
+import { syncStationDataToCloud, pullStationDataFromCloud } from '../services/supabaseSyncService';
 
 const AppContext = createContext();
 
@@ -12,7 +13,7 @@ export const DEFAULT_STATION_PROFILE = {
   gstin: '24AAAAA0000A1Z5',
   address: 'State Highway, Kheralu, Mehsana, Gujarat 384325',
   phone: '+91 98790 12345',
-  email: 'info@shitalpetroleum.com',
+  email: 'station@mypump.com',
   ownerName: 'Owner',
   managerName: 'Shift Manager',
   openingShreeSilak: 50000
@@ -69,7 +70,7 @@ export const DEFAULT_PUMP_EXPENSE_CATEGORIES = [
 
 export function AppProvider({ children }) {
   // AuthContext is available here because AppProvider is nested inside AuthProvider
-  const { setCurrentUser } = useAuth();
+  const { currentUser, setCurrentUser } = useAuth();
   const [activeTab, setActiveTab] = useState('master-sheet');
   const isDarkMode = false;
   const getTodayDateStr = () => {
@@ -697,12 +698,72 @@ export function AppProvider({ children }) {
     document.title = `${name} - MY PUMP ERP`;
   }, [stationProfile]);
 
+  // Enterprise Supabase Cloud Data Hydration on Sign-In
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    // 1. Sync station profile from Supabase user_metadata if present
+    const meta = currentUser || {};
+    if (meta.fuelStationName || meta.ownerName || meta.mobile || meta.gstin) {
+      setStationProfile(prev => ({
+        ...prev,
+        fuelStationName: meta.fuelStationName || prev.fuelStationName,
+        ownerName: meta.ownerName || prev.ownerName,
+        mobile: meta.mobile || prev.mobile,
+        gstin: meta.gstin || prev.gstin,
+        address: meta.address || prev.address,
+        openingShreeSilak: meta.openingShreeSilak !== undefined ? meta.openingShreeSilak : prev.openingShreeSilak
+      }));
+    }
+
+    // 2. Pull account-isolated station snapshot from Supabase Cloud
+    const loadCloudSnapshot = async () => {
+      try {
+        const cloudData = await pullStationDataFromCloud(currentUser);
+        if (cloudData && typeof cloudData === 'object') {
+          if (cloudData.stationProfile) {
+            setStationProfile(prev => ({ ...prev, ...cloudData.stationProfile }));
+          }
+          if (cloudData.fuelRates || cloudData.rates) {
+            const newRates = cloudData.fuelRates || cloudData.rates;
+            setRates(prev => ({ ...prev, ...newRates }));
+            localStorage.setItem('pump_last_fuel_rates', JSON.stringify(newRates));
+          }
+          if (cloudData.nozzles && Array.isArray(cloudData.nozzles) && cloudData.nozzles.length > 0) {
+            setNozzles(cloudData.nozzles);
+            localStorage.setItem('pump_nozzle_master_config', JSON.stringify(cloudData.nozzles));
+          }
+          if (cloudData.dips) {
+            setDips(prev => ({ ...prev, ...cloudData.dips }));
+            localStorage.setItem('pump_last_dip_levels', JSON.stringify(cloudData.dips));
+          }
+          if (cloudData.ushinaDirectory && Array.isArray(cloudData.ushinaDirectory)) {
+            setUshinaDirectory(cloudData.ushinaDirectory);
+            localStorage.setItem('pump_ushina_directory', JSON.stringify(cloudData.ushinaDirectory));
+          }
+        }
+      } catch (err) {
+        console.warn('Could not hydrate cloud data:', err);
+      }
+    };
+
+    loadCloudSnapshot();
+  }, [currentUser]);
+
   const updateStationProfile = async (newProfile) => {
     const updated = { ...stationProfile, ...newProfile };
     setStationProfile(updated);
     try {
       localStorage.setItem('station_profile', JSON.stringify(updated));
       await db.settings.put({ key: 'station_profile', id: 'station_profile', ...updated });
+      
+      // Sync to Supabase Cloud strictly scoped to authenticated user
+      if (currentUser?.id) {
+        syncStationDataToCloud(currentUser.id, { stationProfile: updated }).catch(err => {
+          console.warn('Cloud sync error on station profile update:', err);
+        });
+      }
+
       // Sync React AuthContext state (currentUser) so header badge updates immediately without reload
       try {
         const savedUser = localStorage.getItem('mypump_current_user');
@@ -1153,17 +1214,21 @@ export function AppProvider({ children }) {
         { customerName: '', paymentMode: 'Cash', amount: 0, notes: '' }
       ]);
       let defaultPartyName = ushinaDirectory[0]?.name || '';
+      let defaultPartyId = ushinaDirectory[0]?.id || null;
       if (!defaultPartyName) {
         try {
           const savedUsh = localStorage.getItem('ushina_accounts') || localStorage.getItem('pump_ushina_directory');
           if (savedUsh) {
             const parsed = JSON.parse(savedUsh);
-            if (Array.isArray(parsed) && parsed.length > 0) defaultPartyName = parsed[0]?.name || '';
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              defaultPartyName = parsed[0]?.name || '';
+              defaultPartyId = parsed[0]?.id || null;
+            }
           }
         } catch (e) {}
       }
       setOtherIncomeEntries([
-        { category: defaultPartyName || 'om', description: '', amount: 0 }
+        { accountId: defaultPartyId, partyName: defaultPartyName || 'om', category: defaultPartyName || 'om', description: '', amount: 0 }
       ]);
       const fallbackMsRate = 94.48;
       const firstCustName = 'Mukeshbhai Charada';
@@ -1319,11 +1384,24 @@ export function AppProvider({ children }) {
           customerList,
           rates
         });
+
+        // Supabase Cloud Sync (Account-isolated background sync)
+        if (currentUser?.id) {
+          syncStationDataToCloud(currentUser.id, {
+            date: selectedDate,
+            shiftId: activeShift,
+            fuelRates: rates,
+            nozzles,
+            dips,
+            stationProfile,
+            lastSavedAt: new Date().toISOString()
+          }).catch(() => {});
+        }
       } catch (err) {
         console.error('Auto-save error:', err);
       }
     }, 400); // 400ms debounce
-  }, [dbReady, selectedDate, activeShift, nozzles, lubricants, expenseEntries, bankEntries, dips, debitEntries, jamaEntries, digitalPayEntries, smartMoneyEntries, otherIncomeEntries, customerList, rates]);
+  }, [dbReady, selectedDate, activeShift, nozzles, lubricants, expenseEntries, bankEntries, dips, debitEntries, jamaEntries, digitalPayEntries, smartMoneyEntries, otherIncomeEntries, customerList, rates, currentUser, stationProfile]);
 
   // Trigger auto-save whenever core arrays update
   useEffect(() => {
