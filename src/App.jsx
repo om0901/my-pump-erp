@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import AuthModal from './components/auth/AuthModal';
+import AuthPortal from './components/auth/AuthPortal';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 
@@ -19,12 +19,12 @@ import StaffAttendance from './components/staff/StaffAttendance';
 import BankHisab from './components/banking/BankHisab';
 import BackupSettings from './components/settings/BackupSettings';
 
-import { CheckCircle2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Fuel, Loader2 } from 'lucide-react';
 import { useExcelNavigation } from './hooks/useExcelNavigation';
 
 function AppContent() {
   const { activeTab, dbReady, toastMessage } = useApp();
-  const { authLoading, isAuthenticated } = useAuth();
+  const { authLoading, isAuthenticated, session } = useAuth();
 
   // Attach Universal Excel-style 4-arrow key & Enter keyboard navigation across all modules
   useExcelNavigation();
@@ -189,6 +189,26 @@ function AppContent() {
     }
   };
 
+  // --- AUTHENTICATION GATE & ROUTE PROTECTION ---
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-white gap-3 select-none">
+        <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center animate-pulse shadow-xl shadow-blue-500/20">
+          <Fuel className="w-6 h-6 text-white" />
+        </div>
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+          <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+          <span>Connecting to Station Cloud...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Strict route protection: If no authenticated session, render full-screen AuthPortal gate
+  if (!isAuthenticated || !session) {
+    return <AuthPortal />;
+  }
+
   return (
     <div className="flex h-screen bg-[var(--bg-primary)] text-[var(--text-primary)] overflow-hidden">
       {/* 1. Left Sidebar (Dark Slate Theme) */}
@@ -217,9 +237,6 @@ function AppContent() {
           {renderActiveModule()}
         </main>
       </div>
-
-      {/* Auth Login & Signup Modal */}
-      <AuthModal />
 
       {/* Toast Notification Banner */}
       {toastMessage && (

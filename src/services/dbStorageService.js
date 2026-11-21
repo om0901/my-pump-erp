@@ -11,6 +11,7 @@
  */
 
 import { db } from '../db/database';
+import { supabase } from '../lib/supabaseClient';
 import { saveShiftArchive, loadShiftArchive, listAllArchives, hasArchiveForDate } from './archiveService';
 import {
   writeLocalFile,
@@ -452,3 +453,196 @@ export function getStorageStatus() {
     activeFolderLabel: customFolder || STORAGE_CONFIG.primaryPath
   };
 }
+
+// ==============================================================================
+// ACCOUNT-WISE DATA ISOLATION (CLOUD + LOCAL CACHE SYNC)
+// ==============================================================================
+
+/**
+ * Namespace all local cache keys by user.id (e.g. mypump_${user.id}_data)
+ * so two users on the same browser never overwrite each other's data.
+ */
+export function getNamespacedKey(userId, baseKey) {
+  if (!userId) return `mypump_guest_${baseKey}`;
+  return `mypump_${userId}_${baseKey}`;
+}
+
+export function getScopedLocalData(userId, baseKey, fallback = null) {
+  try {
+    const key = getNamespacedKey(userId, baseKey);
+    const item = localStorage.getItem(key);
+    if (item !== null) {
+      try {
+        return JSON.parse(item);
+      } catch {
+        return item;
+      }
+    }
+    // Fallback to legacy key if user key is not found
+    const legacy = localStorage.getItem(baseKey);
+    if (legacy !== null) {
+      try {
+        const parsed = JSON.parse(legacy);
+        if (userId) setScopedLocalData(userId, baseKey, parsed);
+        return parsed;
+      } catch {
+        return legacy;
+      }
+    }
+  } catch (err) {
+    console.warn(`[dbStorageService] getScopedLocalData error for ${baseKey}:`, err);
+  }
+  return fallback;
+}
+
+export function setScopedLocalData(userId, baseKey, data) {
+  try {
+    const key = getNamespacedKey(userId, baseKey);
+    const serialized = typeof data === 'string' ? data : JSON.stringify(data);
+    localStorage.setItem(key, serialized);
+  } catch (err) {
+    console.warn(`[dbStorageService] setScopedLocalData error for ${baseKey}:`, err);
+  }
+}
+
+/**
+ * On Login: Fetch the user's data row from pump_station_data in Supabase.
+ * If first time, initialize a fresh blank/default profile for that user_id.
+ */
+export async function fetchUserStationData(userId, defaultOverrides = {}) {
+  if (!userId) return { data: null, error: 'User ID is required' };
+
+  try {
+    // 1. Query pump_station_data for this authenticated user_id
+    const { data: row, error } = await supabase
+      .from('pump_station_data')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') {
+      console.warn('[dbStorageService] Supabase fetch warning:', error.message);
+    }
+
+    if (row) {
+      // Hydrate local cache namespaced by user.id
+      setScopedLocalData(userId, 'data', row);
+      if (row.station_profile) setScopedLocalData(userId, 'station_profile', row.station_profile);
+      if (row.fuel_rates) setScopedLocalData(userId, 'pump_last_fuel_rates', row.fuel_rates);
+      if (row.nozzle_config) setScopedLocalData(userId, 'pump_nozzle_master_config', row.nozzle_config);
+      if (row.dip_levels) setScopedLocalData(userId, 'pump_last_dip_levels', row.dip_levels);
+      if (row.other_accounts?.ushinaDirectory) setScopedLocalData(userId, 'pump_ushina_directory', row.other_accounts.ushinaDirectory);
+      if (row.bank_hisab) setScopedLocalData(userId, 'pump_bank_accounts_master', row.bank_hisab);
+
+      return { data: row, isNew: false, error: null };
+    }
+
+    // 2. First-time login: Initialize fresh default profile for that user_id
+    const defaultProfile = {
+      fuelStationName: defaultOverrides.fuelStationName || 'SHITAL PETROL PUMP',
+      ownerName: defaultOverrides.ownerName || 'Station Owner',
+      managerName: defaultOverrides.managerName || 'Shift Manager',
+      phone: defaultOverrides.mobile || '',
+      email: defaultOverrides.email || '',
+      gstin: defaultOverrides.gstin || '',
+      address: defaultOverrides.address || '',
+      openingShreeSilak: defaultOverrides.openingShreeSilak || 0
+    };
+
+    const initialData = {
+      user_id: userId,
+      station_profile: defaultProfile,
+      nozzle_config: defaultOverrides.nozzles || [],
+      fuel_rates: defaultOverrides.fuel_rates || {
+        'Motor Spirit (Petrol)': 94.48,
+        'High Speed Diesel': 90.16,
+        'Speed Petrol': 104.50,
+        'CNG': 75.80
+      },
+      dip_levels: defaultOverrides.dip_levels || {
+        msDipCm: 145,
+        msDipLiters: 10875,
+        hsdDipCm: 160,
+        hsdDipLiters: 16000,
+        speedDipCm: 120,
+        speedDipLiters: 9000
+      },
+      daily_shifts: [],
+      other_accounts: {
+        ushinaDirectory: defaultOverrides.ushinaDirectory || [],
+        pumpExpenses: defaultOverrides.pumpExpenses || []
+      },
+      bank_hisab: defaultOverrides.bank_hisab || [],
+      staff_attendance: {},
+      updated_at: new Date().toISOString()
+    };
+
+    // Cache locally immediately
+    setScopedLocalData(userId, 'data', initialData);
+    setScopedLocalData(userId, 'station_profile', defaultProfile);
+
+    // Persist to Supabase
+    const { data: inserted, error: insertError } = await supabase
+      .from('pump_station_data')
+      .insert([initialData])
+      .select()
+      .maybeSingle();
+
+    if (insertError) {
+      console.warn('[dbStorageService] Supabase insert default row warning:', insertError.message);
+    }
+
+    return { data: inserted || initialData, isNew: true, error: insertError };
+  } catch (err) {
+    console.error('[dbStorageService] fetchUserStationData error:', err);
+    // Offline fallback to local cache
+    const cached = getScopedLocalData(userId, 'data');
+    return { data: cached, isNew: false, error: err };
+  }
+}
+
+/**
+ * On Save (Ctrl+S or auto-save): Upsert the state cleanly into pump_station_data
+ * for that user.id in the background without reloading the page.
+ */
+export async function upsertUserStationData(userId, snapshot = {}) {
+  if (!userId) return { success: false, error: 'User ID is required' };
+
+  try {
+    const payload = {
+      user_id: userId,
+      station_profile: snapshot.stationProfile || snapshot.station_profile || {},
+      nozzle_config: snapshot.nozzles || snapshot.nozzle_config || [],
+      fuel_rates: snapshot.rates || snapshot.fuel_rates || {},
+      dip_levels: snapshot.dips || snapshot.dip_levels || {},
+      daily_shifts: snapshot.dailyShifts || snapshot.daily_shifts || [],
+      other_accounts: snapshot.otherAccounts || snapshot.other_accounts || {},
+      bank_hisab: snapshot.bankEntries || snapshot.bank_hisab || [],
+      staff_attendance: snapshot.staffAttendance || snapshot.staff_attendance || {},
+      updated_at: new Date().toISOString()
+    };
+
+    // 1. Immediately update namespaced local cache so UI is instantaneous
+    setScopedLocalData(userId, 'data', payload);
+    if (payload.station_profile) setScopedLocalData(userId, 'station_profile', payload.station_profile);
+    if (payload.fuel_rates) setScopedLocalData(userId, 'pump_last_fuel_rates', payload.fuel_rates);
+    if (payload.nozzle_config) setScopedLocalData(userId, 'pump_nozzle_master_config', payload.nozzle_config);
+    if (payload.dip_levels) setScopedLocalData(userId, 'pump_last_dip_levels', payload.dip_levels);
+
+    // 2. Background Upsert to Supabase pump_station_data table
+    const { data, error } = await supabase
+      .from('pump_station_data')
+      .upsert(payload, { onConflict: 'user_id' });
+
+    if (error) {
+      console.warn('[dbStorageService] Supabase upsert error:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, error: null };
+  } catch (err) {
+    console.error('[dbStorageService] upsertUserStationData unexpected error:', err);
+    return { success: false, error: err?.message || 'Failed to upsert station data' };
+  }
+}
+

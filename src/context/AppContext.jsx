@@ -5,6 +5,7 @@ import { getMasterBankAccounts, saveMasterBankAccounts, DEFAULT_PUMP_BANKS } fro
 import { getMasterParties, saveMasterParties } from '../utils/partyMaster';
 import { useAuth } from './AuthContext';
 import { syncStationDataToCloud, pullStationDataFromCloud } from '../services/supabaseSyncService';
+import { fetchUserStationData, upsertUserStationData } from '../services/dbStorageService';
 
 const AppContext = createContext();
 
@@ -716,30 +717,48 @@ export function AppProvider({ children }) {
       }));
     }
 
-    // 2. Pull account-isolated station snapshot from Supabase Cloud
+    // 2. Fetch account-wise station data from Supabase Cloud (pump_station_data) with local namespaced caching
     const loadCloudSnapshot = async () => {
       try {
-        const cloudData = await pullStationDataFromCloud(currentUser);
-        if (cloudData && typeof cloudData === 'object') {
-          if (cloudData.stationProfile) {
-            setStationProfile(prev => ({ ...prev, ...cloudData.stationProfile }));
+        const { data: stationRow, isNew } = await fetchUserStationData(currentUser.id, {
+          fuelStationName: currentUser.fuelStationName,
+          ownerName: currentUser.ownerName,
+          mobile: currentUser.mobile,
+          email: currentUser.email
+        });
+
+        if (stationRow && typeof stationRow === 'object') {
+          if (stationRow.station_profile) {
+            setStationProfile(prev => ({ ...prev, ...stationRow.station_profile }));
           }
-          if (cloudData.fuelRates || cloudData.rates) {
-            const newRates = cloudData.fuelRates || cloudData.rates;
-            setRates(prev => ({ ...prev, ...newRates }));
-            localStorage.setItem('pump_last_fuel_rates', JSON.stringify(newRates));
+          if (stationRow.fuel_rates) {
+            setRates(prev => ({ ...prev, ...stationRow.fuel_rates }));
+            localStorage.setItem('pump_last_fuel_rates', JSON.stringify(stationRow.fuel_rates));
           }
-          if (cloudData.nozzles && Array.isArray(cloudData.nozzles) && cloudData.nozzles.length > 0) {
-            setNozzles(cloudData.nozzles);
-            localStorage.setItem('pump_nozzle_master_config', JSON.stringify(cloudData.nozzles));
+          if (stationRow.nozzle_config && Array.isArray(stationRow.nozzle_config) && stationRow.nozzle_config.length > 0) {
+            setNozzles(stationRow.nozzle_config);
+            localStorage.setItem('pump_nozzle_master_config', JSON.stringify(stationRow.nozzle_config));
           }
-          if (cloudData.dips) {
-            setDips(prev => ({ ...prev, ...cloudData.dips }));
-            localStorage.setItem('pump_last_dip_levels', JSON.stringify(cloudData.dips));
+          if (stationRow.dip_levels) {
+            setDips(prev => ({ ...prev, ...stationRow.dip_levels }));
+            localStorage.setItem('pump_last_dip_levels', JSON.stringify(stationRow.dip_levels));
           }
-          if (cloudData.ushinaDirectory && Array.isArray(cloudData.ushinaDirectory)) {
-            setUshinaDirectory(cloudData.ushinaDirectory);
-            localStorage.setItem('pump_ushina_directory', JSON.stringify(cloudData.ushinaDirectory));
+          if (stationRow.other_accounts?.ushinaDirectory && Array.isArray(stationRow.other_accounts.ushinaDirectory)) {
+            setUshinaDirectory(stationRow.other_accounts.ushinaDirectory);
+            localStorage.setItem('pump_ushina_directory', JSON.stringify(stationRow.other_accounts.ushinaDirectory));
+          }
+          if (stationRow.bank_hisab && Array.isArray(stationRow.bank_hisab) && stationRow.bank_hisab.length > 0) {
+            setBankAccountsMaster(stationRow.bank_hisab);
+          }
+        } else {
+          // Fallback to metadata snapshot if Postgres row not yet available
+          const cloudData = await pullStationDataFromCloud(currentUser);
+          if (cloudData && typeof cloudData === 'object') {
+            if (cloudData.stationProfile) setStationProfile(prev => ({ ...prev, ...cloudData.stationProfile }));
+            if (cloudData.rates) setRates(prev => ({ ...prev, ...cloudData.rates }));
+            if (cloudData.nozzles) setNozzles(cloudData.nozzles);
+            if (cloudData.dips) setDips(prev => ({ ...prev, ...cloudData.dips }));
+            if (cloudData.ushinaDirectory) setUshinaDirectory(cloudData.ushinaDirectory);
           }
         }
       } catch (err) {
@@ -1385,8 +1404,29 @@ export function AppProvider({ children }) {
           rates
         });
 
-        // Supabase Cloud Sync (Account-isolated background sync)
+        // Supabase Cloud Sync (Account-isolated background sync into pump_station_data)
         if (currentUser?.id) {
+          upsertUserStationData(currentUser.id, {
+            stationProfile,
+            nozzles,
+            rates,
+            dips,
+            dailyShifts: [
+              {
+                date: selectedDate,
+                shiftType: activeShift,
+                status: isLocked ? 'LOCKED' : 'DRAFT',
+                savedAt: new Date().toISOString()
+              }
+            ],
+            otherAccounts: {
+              ushinaDirectory,
+              pumpExpenses: pumpExpenseCategories
+            },
+            bankEntries,
+            staffAttendance: {}
+          }).catch(err => console.warn('[AutoSave] Cloud upsert skipped/failed:', err));
+
           syncStationDataToCloud(currentUser.id, {
             date: selectedDate,
             shiftId: activeShift,

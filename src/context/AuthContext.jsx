@@ -207,6 +207,24 @@ export function AuthProvider({ children }) {
     }
   };
 
+  /**
+   * Enterprise Supabase Password Reset
+   */
+  const resetPassword = async (email) => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      const redirectUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: redirectUrl
+      });
+      if (error) throw error;
+      return { data, error: null };
+    } catch (err) {
+      console.error('[AuthContext] ResetPassword error:', err);
+      return { data: null, error: err };
+    }
+  };
+
   const openAuthModal = (mode = 'login') => {
     setAuthModalMode(mode);
   };
@@ -230,8 +248,11 @@ export function AuthProvider({ children }) {
         authModalMode,
         setAuthModalMode,
         login,
+        signIn: login,
         signup,
         logout,
+        signOut: logout,
+        resetPassword,
         openAuthModal,
         closeAuthModal
       }}

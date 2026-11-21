@@ -71,7 +71,31 @@ export async function syncStationDataToCloud(userId, snapshot) {
     ...snapshot
   };
 
-  // 1. Primary Cloud Sync: Supabase Auth User Metadata (zero SQL setup required)
+  // 1. Primary Cloud Sync: public.pump_station_data table (RLS enabled)
+  try {
+    const { error: tableError } = await supabase
+      .from('pump_station_data')
+      .upsert({
+        user_id: userId,
+        station_profile: snapshot.stationProfile || {},
+        nozzle_config: snapshot.nozzles || [],
+        fuel_rates: snapshot.fuelRates || snapshot.rates || {},
+        dip_levels: snapshot.dips || {},
+        daily_shifts: snapshot.dailyShifts || [],
+        other_accounts: snapshot.otherAccounts || {},
+        bank_hisab: snapshot.bankEntries || snapshot.bank_hisab || [],
+        staff_attendance: snapshot.staffAttendance || {},
+        updated_at: payload.updated_at
+      }, { onConflict: 'user_id' });
+
+    if (!tableError) {
+      console.log('[supabaseSyncService] ✅ Postgres pump_station_data table updated');
+    }
+  } catch (err) {
+    console.warn('[supabaseSyncService] pump_station_data upsert error:', err);
+  }
+
+  // 2. Fallback User Metadata Sync (ensures persistence even without SQL table)
   try {
     const { error: metaError } = await supabase.auth.updateUser({
       data: {
@@ -80,30 +104,11 @@ export async function syncStationDataToCloud(userId, snapshot) {
       }
     });
 
-    if (metaError) {
-      console.warn('[supabaseSyncService] Metadata cloud sync warning:', metaError.message);
-    } else {
+    if (!metaError) {
       console.log(`[supabaseSyncService] ✅ Station data synced to Supabase Cloud for user ${userId}`);
     }
   } catch (err) {
     console.warn('[supabaseSyncService] Error updating user cloud metadata:', err);
-  }
-
-  // 2. Secondary Cloud Sync: Attempt public.station_data table if created in Postgres
-  try {
-    const { error: tableError } = await supabase
-      .from('station_data')
-      .upsert({
-        user_id: userId,
-        data: payload,
-        updated_at: payload.updated_at
-      });
-
-    if (!tableError) {
-      console.log('[supabaseSyncService] ✅ Postgres station_data table updated');
-    }
-  } catch {
-    // Graceful no-op if table does not exist
   }
 
   return { success: true };
@@ -115,19 +120,29 @@ export async function syncStationDataToCloud(userId, snapshot) {
 export async function pullStationDataFromCloud(user) {
   if (!user || !user.id) return null;
 
-  // 1. Try public.station_data Postgres table first
+  // 1. Try public.pump_station_data Postgres table first
   try {
     const { data, error } = await supabase
-      .from('station_data')
-      .select('data')
+      .from('pump_station_data')
+      .select('*')
       .eq('user_id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (!error && data && data.data) {
-      return data.data;
+    if (!error && data) {
+      return {
+        stationProfile: data.station_profile,
+        rates: data.fuel_rates,
+        fuelRates: data.fuel_rates,
+        nozzles: data.nozzle_config,
+        dips: data.dip_levels,
+        dailyShifts: data.daily_shifts,
+        ushinaDirectory: data.other_accounts?.ushinaDirectory,
+        bank_hisab: data.bank_hisab,
+        staffAttendance: data.staff_attendance
+      };
     }
   } catch {
-    // Table not present, proceed to metadata
+    // Table not present or offline, proceed to metadata
   }
 
   // 2. Fall back to user_metadata

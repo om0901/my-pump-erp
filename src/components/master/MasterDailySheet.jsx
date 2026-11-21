@@ -4,6 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { syncStationDataToCloud } from '../../services/supabaseSyncService';
+import { upsertUserStationData } from '../../services/dbStorageService';
 import { db } from '../../db/database';
 import { syncSectionBToLubricants, syncDailyEntryToModules, syncNozzlesToStockPatrak, calculateLubricantRowTotal, saveShiftSnapshotToArchive, getShiftSnapshotForDate } from '../../db/storageService';
 import { processShiftSave } from '../../services/shiftPipelineService';
@@ -2706,8 +2707,26 @@ export default function MasterDailySheet() {
       window.dispatchEvent(new Event('pump_product_catalog_updated'));
       window.dispatchEvent(new Event('lubricant_matrix_updated'));
 
-      // Supabase Cloud Shift Snapshot Sync
+      // Supabase Cloud Shift Snapshot Sync (Account-isolated into pump_station_data)
       if (currentUser?.id) {
+        upsertUserStationData(currentUser.id, {
+          stationProfile,
+          nozzles,
+          rates,
+          dips,
+          dailyShifts: [
+            {
+              date: selectedDate,
+              shiftType: activeShift,
+              totals: { grossInflow, totalDeductions, netCashInHand },
+              savedAt: new Date().toISOString()
+            }
+          ],
+          otherAccounts: { ushinaDirectory, pumpExpenses: pumpExpenseCategories },
+          bankEntries,
+          staffAttendance: {}
+        }).catch(err => console.warn('Supabase pump_station_data upsert error:', err));
+
         syncStationDataToCloud(currentUser.id, {
           date: selectedDate,
           shiftId: activeShift,
