@@ -30,13 +30,14 @@ export function AuthProvider({ children }) {
     return {
       id: user.id,
       email: user.email,
-      fuelStationName: savedLocal?.fuelStationName || meta.fuelStationName || meta.station_name || 'SHITAL PETROL PUMP',
-      ownerName: savedLocal?.ownerName || meta.ownerName || meta.owner_name || 'Station Owner',
-      managerName: savedLocal?.managerName || meta.managerName || 'Shift Manager',
+      fuelStationName: savedLocal?.fuelStationName || meta.fuelStationName || meta.station_name || '',
+      ownerName: savedLocal?.ownerName || meta.ownerName || meta.owner_name || '',
+      managerName: savedLocal?.managerName || meta.managerName || '',
       mobile: savedLocal?.phone || savedLocal?.mobile || meta.mobile || '',
       gstin: savedLocal?.gstin || meta.gstin || '',
       address: savedLocal?.address || meta.address || '',
       openingShreeSilak: savedLocal?.openingShreeSilak !== undefined ? parseFloat(savedLocal.openingShreeSilak) : (parseFloat(meta.openingShreeSilak) || 0),
+      isOnboarded: savedLocal?.isOnboarded !== undefined ? savedLocal.isOnboarded : (meta.isOnboarded !== undefined ? meta.isOnboarded : false),
       createdAt: user.created_at
     };
   };

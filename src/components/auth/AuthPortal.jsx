@@ -1,24 +1,23 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { supabase, isEnvConfigured, isSupabaseConfigured } from '../../lib/supabaseClient';
-import {
-  Fuel,
-  Building2,
-  User,
-  Mail,
-  Lock,
-  ArrowRight,
-  ShieldCheck,
-  CheckCircle2,
-  AlertCircle,
-  Loader2,
-  KeyRound,
+import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
+import { 
+  Fuel, 
+  Lock, 
+  Mail, 
+  User, 
+  Building2, 
+  Phone, 
+  ArrowRight, 
+  ShieldCheck, 
+  Sparkles, 
+  Receipt, 
+  AlertCircle, 
+  CheckCircle2, 
+  RotateCcw,
   Eye,
   EyeOff,
-  Sparkles,
-  Phone,
-  Receipt,
-  RotateCcw,
+  Loader2,
   AlertTriangle
 } from 'lucide-react';
 
@@ -28,21 +27,28 @@ export default function AuthPortal() {
   // Mode: 'signin' | 'signup' | 'forgot'
   const [mode, setMode] = useState('signin');
 
-  // Form fields
+  // Common fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Sign up fields
   const [stationName, setStationName] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [mobile, setMobile] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Password visibility
-  const [showPassword, setShowPassword] = useState(false);
-
-  // Status & Feedback States
+  // UI state
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Check if env variables are defined in Vite
+  const isEnvConfigured = Boolean(
+    import.meta.env.VITE_SUPABASE_URL && 
+    import.meta.env.VITE_SUPABASE_ANON_KEY &&
+    !import.meta.env.VITE_SUPABASE_URL.includes('your-project-id')
+  );
 
   const clearMessages = () => {
     setErrorMessage('');
@@ -60,35 +66,38 @@ export default function AuthPortal() {
     clearMessages();
 
     const cleanEmail = email.trim();
-    if (!cleanEmail) {
-      setErrorMessage('Please enter your station email address.');
-      return;
-    }
-    if (!password) {
-      setErrorMessage('Please enter your account password.');
+    if (!cleanEmail || !password) {
+      setErrorMessage('Please enter both email and password.');
       return;
     }
 
     setSubmitting(true);
-    console.log('[AuthPortal] Submitting Sign In for:', cleanEmail);
+    console.log('[AuthPortal] Attempting sign in for:', cleanEmail);
 
     try {
-      const { user, session, error } = await login(cleanEmail, password);
-      console.log('[AuthPortal] Sign In result:', { user, hasSession: Boolean(session), error });
+      let result;
+      if (typeof login === 'function') {
+        result = await login(cleanEmail, password);
+      } else {
+        result = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password
+        });
+      }
 
-      if (error) {
-        const msg = error.message || String(error);
+      console.log('[AuthPortal] Sign In result:', result);
+
+      if (result?.error) {
+        const msg = result.error.message || 'Failed to sign in. Please check your credentials.';
         if (msg.toLowerCase().includes('invalid login credentials')) {
-          setErrorMessage('Invalid email or password. Please check your credentials and try again.');
+          setErrorMessage('Invalid station email or password. Please verify and try again.');
         } else if (msg.toLowerCase().includes('email not confirmed')) {
-          setErrorMessage('Email address not confirmed. Please check your email inbox or disable email confirmation in Supabase Auth settings.');
-        } else if (msg.toLowerCase().includes('fetch') || msg.toLowerCase().includes('network')) {
-          setErrorMessage('Network error: Unable to connect to Supabase server. Please check your internet connection.');
+          setErrorMessage('Email address not yet confirmed. Please verify your email inbox or disable email confirmation in Supabase settings.');
         } else {
           setErrorMessage(msg);
         }
-      } else if (user || session) {
-        setSuccessMessage('Login verified! Redirecting to Station Dashboard...');
+      } else {
+        setSuccessMessage('Sign in successful! Loading station workspace...');
       }
     } catch (err) {
       console.error('[AuthPortal] Unexpected error during Sign In:', err);
@@ -98,7 +107,7 @@ export default function AuthPortal() {
     }
   };
 
-  // --- 2. SIGN UP / REGISTRATION HANDLER ---
+  // --- 2. SIGN UP HANDLER ---
   const handleSignUp = async (e) => {
     e.preventDefault();
     clearMessages();
@@ -108,11 +117,11 @@ export default function AuthPortal() {
     const cleanOwner = ownerName.trim();
 
     if (!cleanStation) {
-      setErrorMessage('Please enter your Petrol Pump / Fuel Station name.');
+      setErrorMessage('Please enter your Petrol Pump / Station Name.');
       return;
     }
     if (!cleanOwner) {
-      setErrorMessage('Please enter the Station Owner or Manager name.');
+      setErrorMessage('Please enter the Station Owner or Manager Name.');
       return;
     }
     if (!cleanEmail) {
@@ -120,34 +129,52 @@ export default function AuthPortal() {
       return;
     }
     if (!password || password.length < 6) {
-      setErrorMessage('Password must be at least 6 characters long.');
+      setErrorMessage('Password must be at least 6 characters.');
       return;
     }
     if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match. Please re-enter both passwords.');
+      setErrorMessage('Passwords do not match. Please re-enter your password.');
       return;
     }
 
     setSubmitting(true);
-    console.log('[AuthPortal] Submitting Registration for:', { cleanStation, cleanOwner, cleanEmail });
+    console.log('[AuthPortal] Attempting station registration for:', cleanEmail, cleanStation);
 
     try {
-      const { user, session, error } = await signup({
-        email: cleanEmail,
-        password: password,
-        fuelStationName: cleanStation,
-        ownerName: cleanOwner,
-        mobile: mobile.trim()
-      });
+      let result;
+      if (typeof signup === 'function') {
+        result = await signup({
+          email: cleanEmail,
+          password,
+          fuelStationName: cleanStation,
+          ownerName: cleanOwner,
+          mobile: mobile.trim()
+        });
+      } else {
+        result = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            data: {
+              fuelStationName: cleanStation,
+              station_name: cleanStation,
+              ownerName: cleanOwner,
+              owner_name: cleanOwner,
+              mobile: mobile.trim()
+            }
+          }
+        });
+      }
 
-      console.log('[AuthPortal] Sign Up result:', { user, hasSession: Boolean(session), error });
+      console.log('[AuthPortal] Sign Up result:', result);
 
-      if (error) {
-        const msg = error.message || String(error);
-        if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('unique')) {
-          setErrorMessage('This email is already registered. Please click "Sign In instead" below.');
-        } else if (msg.toLowerCase().includes('password')) {
-          setErrorMessage(msg);
+      const user = result?.user || result?.data?.user;
+      const session = result?.session || result?.data?.session;
+
+      if (result?.error) {
+        const msg = result.error.message || 'Failed to register station.';
+        if (msg.toLowerCase().includes('already registered')) {
+          setErrorMessage('An account with this email already exists. Please sign in instead.');
         } else {
           setErrorMessage(msg);
         }
@@ -205,73 +232,70 @@ export default function AuthPortal() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 overflow-y-auto p-4 sm:p-6 select-none font-sans">
-      {/* Background Decorative Glow */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-orange-50 via-slate-50 to-amber-50 text-slate-900 overflow-y-auto p-4 sm:p-6 select-none font-sans">
+      {/* Background Subtle Warm Ambient Glow */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-orange-400/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-amber-400/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Main Container Card */}
-      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-xl grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
+      <div className="relative w-full max-w-4xl bg-white border border-orange-100 rounded-3xl shadow-2xl overflow-hidden grid grid-cols-1 md:grid-cols-12 min-h-[580px]">
         
-        {/* Left Feature Showcase Banner (Dark Indigo Theme) */}
-        <div className="hidden md:flex md:col-span-5 bg-gradient-to-br from-indigo-950/90 via-slate-900 to-slate-950 p-8 flex-col justify-between border-r border-slate-800 relative overflow-hidden">
-          <div className="absolute -top-12 -left-12 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl" />
+        {/* Left Feature Showcase Banner (Light Warm Amber Theme) */}
+        <div className="hidden md:flex md:col-span-5 bg-orange-50/80 p-8 flex-col justify-between border-r border-orange-100 relative overflow-hidden">
+          <div className="absolute -top-12 -left-12 w-48 h-48 bg-orange-200/30 rounded-full blur-2xl pointer-events-none" />
 
           {/* Logo & Brand Header */}
           <div className="space-y-3 z-10">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-500 flex items-center justify-center shadow-lg shadow-orange-500/25 text-white">
                 <Fuel className="w-6 h-6" />
               </div>
               <div>
-                <h1 className="text-xl font-extrabold tracking-tight text-white">MY PUMP</h1>
-                <p className="text-[10px] uppercase font-bold tracking-widest text-blue-400">Fuel Station ERP</p>
+                <h1 className="text-xl font-extrabold tracking-tight text-slate-900">MY PUMP</h1>
+                <p className="text-[10px] uppercase font-bold tracking-widest text-orange-600">Fuel Station ERP</p>
               </div>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed pt-2">
+            <p className="text-xs text-slate-600 leading-relaxed pt-2">
               Next-generation fuel station management. Dual Jama-Udhar accounting, real-time nozzle readings, and account-isolated cloud synchronization.
             </p>
           </div>
 
           {/* Value Highlights */}
           <div className="space-y-3 z-10 py-6">
-            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-white/90 border border-orange-100/90 shadow-2xs">
+              <ShieldCheck className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-slate-100">Account-Wise Data Isolation</p>
-                <p className="text-[11px] text-slate-400">Strict Row Level Security (RLS). Every station's data is isolated.</p>
+                <p className="text-xs font-bold text-slate-900">Account-Wise Data Isolation</p>
+                <p className="text-[11px] text-slate-600">Strict Row Level Security (RLS). Every station's data is isolated.</p>
               </div>
             </div>
 
-            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
-              <Sparkles className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-white/90 border border-orange-100/90 shadow-2xs">
+              <Sparkles className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-slate-100">Dual Sync Architecture</p>
-                <p className="text-[11px] text-slate-400">Instant offline local cache with automated Supabase cloud sync.</p>
+                <p className="text-xs font-bold text-slate-900">Dual Sync Architecture</p>
+                <p className="text-[11px] text-slate-600">Instant offline local cache with automated background cloud sync.</p>
               </div>
             </div>
 
-            <div className="flex items-start gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/60">
-              <Receipt className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 p-3.5 rounded-2xl bg-white/90 border border-orange-100/90 shadow-2xs">
+              <Receipt className="w-4 h-4 text-orange-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-slate-100">Complete Station Ledger</p>
-                <p className="text-[11px] text-slate-400">Daily Entry, Stock Patrak, Ushina Khata, and Bank Hisab.</p>
+                <p className="text-xs font-bold text-slate-900">Complete Station Ledger</p>
+                <p className="text-[11px] text-slate-600">Daily Entry, Stock Patrak, Ushina Khata, and Bank Hisab.</p>
               </div>
             </div>
           </div>
 
-          {/* Bottom Security Badge */}
-          <div className="z-10 pt-4 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-medium">
-            <span>Enterprise Security 256-bit</span>
-            <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              Cloud Connected
-            </span>
+          {/* Bottom Security Footer */}
+          <div className="z-10 pt-4 border-t border-orange-200/60 flex items-center justify-between text-[11px] text-slate-500 font-medium">
+            <span>Enterprise 256-bit Security</span>
+            <span className="font-semibold text-slate-600">Offline Ready</span>
           </div>
         </div>
 
         {/* Right Authentication Form Area - Crisp Clean Pure White Background */}
-        <div className="md:col-span-7 bg-white text-slate-900 p-6 sm:p-10 flex flex-col justify-center shadow-lg">
+        <div className="md:col-span-7 bg-white text-slate-900 p-6 sm:p-10 flex flex-col justify-center">
           
           {/* Supabase API Key Configuration Warning (if env keys missing) */}
           {!isEnvConfigured && !isSupabaseConfigured && (
@@ -337,7 +361,7 @@ export default function AuthPortal() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="station@mypump.com"
-                    className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                   />
                 </div>
               </div>
@@ -350,7 +374,7 @@ export default function AuthPortal() {
                   <button
                     type="button"
                     onClick={() => switchMode('forgot')}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-bold transition-colors cursor-pointer"
+                    className="text-xs text-orange-600 hover:text-orange-700 font-bold transition-colors cursor-pointer"
                   >
                     Forgot Password?
                   </button>
@@ -363,7 +387,7 @@ export default function AuthPortal() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                   />
                   <button
                     type="button"
@@ -378,7 +402,7 @@ export default function AuthPortal() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <>
@@ -398,7 +422,7 @@ export default function AuthPortal() {
                 <button
                   type="button"
                   onClick={() => switchMode('signup')}
-                  className="font-extrabold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  className="font-extrabold text-orange-600 hover:text-orange-700 underline cursor-pointer"
                 >
                   Create New Station Account
                 </button>
@@ -422,7 +446,7 @@ export default function AuthPortal() {
                       value={stationName}
                       onChange={(e) => setStationName(e.target.value)}
                       placeholder="e.g. SHITAL PETROL PUMP"
-                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all uppercase shadow-2xs"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all uppercase shadow-2xs"
                     />
                   </div>
                 </div>
@@ -439,7 +463,7 @@ export default function AuthPortal() {
                       value={ownerName}
                       onChange={(e) => setOwnerName(e.target.value)}
                       placeholder="e.g. Rajesh Patel"
-                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -458,7 +482,7 @@ export default function AuthPortal() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="station@mypump.com"
-                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -474,7 +498,7 @@ export default function AuthPortal() {
                       value={mobile}
                       onChange={(e) => setMobile(e.target.value)}
                       placeholder="9876543210"
-                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -493,7 +517,7 @@ export default function AuthPortal() {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -510,7 +534,7 @@ export default function AuthPortal() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                      className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-900 font-mono placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                     />
                   </div>
                 </div>
@@ -519,7 +543,7 @@ export default function AuthPortal() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-orange-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 active:scale-[0.99] text-white font-extrabold text-sm shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <>
@@ -539,7 +563,7 @@ export default function AuthPortal() {
                 <button
                   type="button"
                   onClick={() => switchMode('signin')}
-                  className="font-extrabold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  className="font-extrabold text-orange-600 hover:text-orange-700 underline cursor-pointer"
                 >
                   Sign In instead
                 </button>
@@ -562,7 +586,7 @@ export default function AuthPortal() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="station@mypump.com"
-                    className="w-full bg-slate-50 border border-slate-300 focus:border-blue-600 focus:bg-white focus:ring-2 focus:ring-blue-100 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
+                    className="w-full bg-slate-50 border border-slate-300 focus:border-orange-500 focus:bg-white focus:ring-2 focus:ring-orange-100 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-slate-900 font-medium placeholder:text-slate-400 outline-none transition-all shadow-2xs"
                   />
                 </div>
               </div>
@@ -570,7 +594,7 @@ export default function AuthPortal() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-sm shadow-md shadow-blue-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-700 hover:to-amber-700 text-white font-extrabold text-sm shadow-md shadow-orange-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {submitting ? (
                   <>
@@ -590,7 +614,7 @@ export default function AuthPortal() {
                 <button
                   type="button"
                   onClick={() => switchMode('signin')}
-                  className="font-extrabold text-blue-600 hover:text-blue-800 underline cursor-pointer"
+                  className="font-extrabold text-orange-600 hover:text-orange-700 underline cursor-pointer"
                 >
                   Back to Sign In
                 </button>

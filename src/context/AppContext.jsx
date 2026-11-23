@@ -11,14 +11,15 @@ import { supabase } from '../lib/supabaseClient';
 const AppContext = createContext();
 
 export const DEFAULT_STATION_PROFILE = {
-  fuelStationName: 'SHITAL PETROL PUMP',
-  gstin: '24AAAAA0000A1Z5',
-  address: 'State Highway, Kheralu, Mehsana, Gujarat 384325',
-  phone: '+91 98790 12345',
-  email: 'station@mypump.com',
-  ownerName: 'Owner',
-  managerName: 'Shift Manager',
-  openingShreeSilak: 50000
+  fuelStationName: '',
+  gstin: '',
+  address: '',
+  phone: '',
+  email: '',
+  ownerName: '',
+  managerName: '',
+  openingShreeSilak: 0,
+  isOnboarded: false
 };
 
 export const DEFAULT_PRODUCT_CATALOG = [
@@ -55,20 +56,9 @@ export const DEFAULT_PRODUCT_CATALOG = [
 
 export const DEFAULT_BANK_ACCOUNTS = DEFAULT_PUMP_BANKS;
 
-export const DEFAULT_USHINA_DIRECTORY = [
-  { id: 'ush-1', name: 'Ramesh Patel (Staff)', category: 'Staff & Partner Upad', phone: '9879011223', openingBalance: 0, jamaEntries: [], udharEntries: [] },
-  { id: 'ush-2', name: 'Chaganbhai Driver', category: 'Vendor / Supplier', phone: '9428055443', openingBalance: 0, jamaEntries: [], udharEntries: [] },
-  { id: 'ush-3', name: 'Mahesh Service Station', category: 'Maintenance & Repairs', phone: '9825066778', openingBalance: 0, jamaEntries: [], udharEntries: [] }
-];
+export const DEFAULT_USHINA_DIRECTORY = [];
 
-export const DEFAULT_PUMP_EXPENSE_CATEGORIES = [
-  { id: 'exp-cat-1', name: 'Tea & Refreshment', category: 'Daily Operations', entries: [] },
-  { id: 'exp-cat-2', name: 'Generator Diesel', category: 'Power & Fuel', entries: [] },
-  { id: 'exp-cat-3', name: 'Electricity & Utilities', category: 'Utility Bills', entries: [] },
-  { id: 'exp-cat-4', name: 'Stationery & Office', category: 'Office Supplies', entries: [] },
-  { id: 'exp-cat-5', name: 'Maintenance & Repairs', category: 'Maintenance', entries: [] },
-  { id: 'exp-cat-6', name: 'Miscellaneous Staff Kharch', category: 'Miscellaneous', entries: [] }
-];
+export const DEFAULT_PUMP_EXPENSE_CATEGORIES = [];
 
 export function AppProvider({ children }) {
   // AuthContext is available here because AppProvider is nested inside AuthProvider
@@ -91,25 +81,25 @@ export function AppProvider({ children }) {
   // --- IN-MEMORY FUEL STOCK PATRAK STATE & ADVANCEMENT SIMULATION ---
   const [fuelStockState, setFuelStockState] = useState(() => ({
     'PETROL (MS)': {
-      openingStock: 10000,
+      openingStock: 0,
       receivedStock: 0,
       salesLitres: 0,
-      totalStock: 10000,
-      closingStock: 10000
+      totalStock: 0,
+      closingStock: 0
     },
     'DIESEL (HSD)': {
-      openingStock: 10000,
+      openingStock: 0,
       receivedStock: 0,
       salesLitres: 0,
-      totalStock: 10000,
-      closingStock: 10000
+      totalStock: 0,
+      closingStock: 0
     },
     'SMART FUEL': {
-      openingStock: 10000,
+      openingStock: 0,
       receivedStock: 0,
       salesLitres: 0,
-      totalStock: 10000,
-      closingStock: 10000
+      totalStock: 0,
+      closingStock: 0
     }
   }));
 
@@ -117,13 +107,13 @@ export function AppProvider({ children }) {
     const today = new Date().toISOString().split('T')[0];
     return {
       'PETROL (MS)': [
-        { id: 'ms-init', date: today, openingStock: 10000, receiveStock: 0, totalStock: 10000, sellStock: 0, closingStock: 10000, isFinalized: false }
+        { id: 'ms-init', date: today, openingStock: 0, receiveStock: 0, totalStock: 0, sellStock: 0, closingStock: 0, isFinalized: false }
       ],
       'DIESEL (HSD)': [
-        { id: 'hsd-init', date: today, openingStock: 10000, receiveStock: 0, totalStock: 10000, sellStock: 0, closingStock: 10000, isFinalized: false }
+        { id: 'hsd-init', date: today, openingStock: 0, receiveStock: 0, totalStock: 0, sellStock: 0, closingStock: 0, isFinalized: false }
       ],
       'SMART FUEL': [
-        { id: 'smart-init', date: today, openingStock: 10000, receiveStock: 0, totalStock: 10000, sellStock: 0, closingStock: 10000, isFinalized: false }
+        { id: 'smart-init', date: today, openingStock: 0, receiveStock: 0, totalStock: 0, sellStock: 0, closingStock: 0, isFinalized: false }
       ]
     };
   });
@@ -757,23 +747,53 @@ export function AppProvider({ children }) {
             } catch (e) {}
           }
           if (stationRow.fuel_rates) {
-            setRates(prev => ({ ...prev, ...stationRow.fuel_rates }));
+            setRates(stationRow.fuel_rates);
             localStorage.setItem('pump_last_fuel_rates', JSON.stringify(stationRow.fuel_rates));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(stationRow.fuel_rates));
+          } else if (isNew) {
+            const zeroRates = { 'Motor Spirit (Petrol)': 0, 'High Speed Diesel': 0, 'Speed Petrol': 0, 'CNG': 0 };
+            setRates(zeroRates);
+            localStorage.setItem('pump_last_fuel_rates', JSON.stringify(zeroRates));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(zeroRates));
           }
-          if (stationRow.nozzle_config && Array.isArray(stationRow.nozzle_config) && stationRow.nozzle_config.length > 0) {
+
+          if (stationRow.nozzle_config && Array.isArray(stationRow.nozzle_config)) {
             setNozzles(stationRow.nozzle_config);
             localStorage.setItem('pump_nozzle_master_config', JSON.stringify(stationRow.nozzle_config));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_nozzle_master_config`, JSON.stringify(stationRow.nozzle_config));
+          } else if (isNew) {
+            setNozzles([]);
+            localStorage.setItem('pump_nozzle_master_config', JSON.stringify([]));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_nozzle_master_config`, JSON.stringify([]));
           }
+
           if (stationRow.dip_levels) {
-            setDips(prev => ({ ...prev, ...stationRow.dip_levels }));
+            setDips(stationRow.dip_levels);
             localStorage.setItem('pump_last_dip_levels', JSON.stringify(stationRow.dip_levels));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_last_dip_levels`, JSON.stringify(stationRow.dip_levels));
+          } else if (isNew) {
+            const zeroDips = { msDipCm: 0, msDipLiters: 0, hsdDipCm: 0, hsdDipLiters: 0, speedDipCm: 0, speedDipLiters: 0 };
+            setDips(zeroDips);
+            localStorage.setItem('pump_last_dip_levels', JSON.stringify(zeroDips));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_last_dip_levels`, JSON.stringify(zeroDips));
           }
+
           if (stationRow.other_accounts?.ushinaDirectory && Array.isArray(stationRow.other_accounts.ushinaDirectory)) {
             setUshinaDirectory(stationRow.other_accounts.ushinaDirectory);
             localStorage.setItem('pump_ushina_directory', JSON.stringify(stationRow.other_accounts.ushinaDirectory));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_ushina_directory`, JSON.stringify(stationRow.other_accounts.ushinaDirectory));
+          } else if (isNew) {
+            setUshinaDirectory([]);
+            localStorage.setItem('pump_ushina_directory', JSON.stringify([]));
+            localStorage.setItem(`mypump_${currentUser.id}_pump_ushina_directory`, JSON.stringify([]));
           }
-          if (stationRow.bank_hisab && Array.isArray(stationRow.bank_hisab) && stationRow.bank_hisab.length > 0) {
+
+          if (stationRow.bank_hisab && Array.isArray(stationRow.bank_hisab)) {
             setBankAccountsMaster(stationRow.bank_hisab);
+            localStorage.setItem(`mypump_${currentUser.id}_pump_bank_accounts`, JSON.stringify(stationRow.bank_hisab));
+          } else if (isNew) {
+            setBankAccountsMaster([]);
+            localStorage.setItem(`mypump_${currentUser.id}_pump_bank_accounts`, JSON.stringify([]));
           }
         } else {
           // Fallback to metadata snapshot if Postgres row not yet available
@@ -874,40 +894,59 @@ export function AppProvider({ children }) {
   };
 
   // --- GLOBAL REACTIVE SHIFT STATE ---
-  const [dips, setDips] = useState({
-    msDipCm: 145,
-    msDipLiters: 10875,
-    hsdDipCm: 160,
-    hsdDipLiters: 16000,
-    speedDipCm: 120,
-    speedDipLiters: 9000
+  const [dips, setDips] = useState(() => {
+    try {
+      const activeUser = localStorage.getItem('mypump_current_user');
+      const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      const key = userId ? `mypump_${userId}_pump_last_dip_levels` : 'pump_last_dip_levels';
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+    return {
+      msDipCm: 0,
+      msDipLiters: 0,
+      hsdDipCm: 0,
+      hsdDipLiters: 0,
+      speedDipCm: 0,
+      speedDipLiters: 0
+    };
   });
+
   const [rates, setRates] = useState(() => {
     try {
-      const saved = localStorage.getItem('pump_last_fuel_rates');
+      const activeUser = localStorage.getItem('mypump_current_user');
+      const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      const key = userId ? `mypump_${userId}_pump_last_fuel_rates` : 'pump_last_fuel_rates';
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
           return {
-            'Motor Spirit (Petrol)': parseFloat(parsed['Motor Spirit (Petrol)']) || 94.48,
-            'High Speed Diesel': parseFloat(parsed['High Speed Diesel']) || 90.16,
-            'Speed Petrol': parseFloat(parsed['Speed Petrol'] || parsed['XP Premium Petrol']) || 104.50,
-            'CNG': parseFloat(parsed['CNG']) || 75.80
+            'Motor Spirit (Petrol)': parseFloat(parsed['Motor Spirit (Petrol)']) || 0,
+            'High Speed Diesel': parseFloat(parsed['High Speed Diesel']) || 0,
+            'Speed Petrol': parseFloat(parsed['Speed Petrol'] || parsed['XP Premium Petrol']) || 0,
+            'CNG': parseFloat(parsed['CNG']) || 0
           };
         }
       }
     } catch (e) {}
     return {
-      'Motor Spirit (Petrol)': 94.48,
-      'High Speed Diesel': 90.16,
-      'Speed Petrol': 104.50,
-      'CNG': 75.80,
+      'Motor Spirit (Petrol)': 0,
+      'High Speed Diesel': 0,
+      'Speed Petrol': 0,
+      'CNG': 0,
     };
   });
 
   const [nozzles, setNozzles] = useState(() => {
     try {
-      const saved = localStorage.getItem('pump_nozzle_master_config');
+      const activeUser = localStorage.getItem('mypump_current_user');
+      const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      const key = userId ? `mypump_${userId}_pump_nozzle_master_config` : 'pump_nozzle_master_config';
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -923,6 +962,9 @@ export function AppProvider({ children }) {
     if (rates && typeof rates === 'object') {
       try {
         localStorage.setItem('pump_last_fuel_rates', JSON.stringify(rates));
+        if (currentUser?.id) {
+          localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(rates));
+        }
         if (dbReady) {
           db.settings.put({
             key: 'pump_last_fuel_rates',
@@ -932,12 +974,15 @@ export function AppProvider({ children }) {
         }
       } catch (e) {}
     }
-  }, [rates, dbReady]);
+  }, [rates, dbReady, currentUser]);
 
   useEffect(() => {
     if (Array.isArray(nozzles) && nozzles.length > 0) {
       try {
         localStorage.setItem('pump_nozzle_master_config', JSON.stringify(nozzles));
+        if (currentUser?.id) {
+          localStorage.setItem(`mypump_${currentUser.id}_pump_nozzle_master_config`, JSON.stringify(nozzles));
+        }
         if (dbReady) {
           db.settings.put({
             key: 'pump_nozzle_master_config',
@@ -947,10 +992,20 @@ export function AppProvider({ children }) {
         }
       } catch (e) {}
     }
-  }, [nozzles, dbReady]);
-  const [lubricants, setLubricants] = useState([
-    { productName: '2T Engine Oil (Pouches/Bottles)', litreVolume: 0.04, volume: 0.04, soldQty: 0, soldCount: 0, unitPrice: 15, rate: 15, totalAmount: 0 }
-  ]);
+  }, [nozzles, dbReady, currentUser]);
+
+  useEffect(() => {
+    if (dips && typeof dips === 'object') {
+      try {
+        localStorage.setItem('pump_last_dip_levels', JSON.stringify(dips));
+        if (currentUser?.id) {
+          localStorage.setItem(`mypump_${currentUser.id}_pump_last_dip_levels`, JSON.stringify(dips));
+        }
+      } catch (e) {}
+    }
+  }, [dips, currentUser]);
+
+  const [lubricants, setLubricants] = useState([]);
 
   const [expenseEntries, setExpenseEntries] = useState([]);
   const [otherIncomeEntries, setOtherIncomeEntries] = useState([]);
@@ -959,20 +1014,15 @@ export function AppProvider({ children }) {
   const [bankEntries, setBankEntries] = useState([]);
   const [smartBalanceEntries, setSmartBalanceEntries] = useState([]);
 
-  const [digitalPayEntries, setDigitalPayEntries] = useState([
-    { method: 'UPI', amount: 18500 },
-    { method: 'CARD', amount: 14129 }
-  ]);
+  const [digitalPayEntries, setDigitalPayEntries] = useState([]);
 
-  const [smartMoneyEntries, setSmartMoneyEntries] = useState([
-    { program: 'PETRO CARD / FLEET CARD', amount: 8450 }
-  ]);
+  const [smartMoneyEntries, setSmartMoneyEntries] = useState([]);
 
   const [denominations, setDenominations] = useState({
-    n2000: 0, n500: 380, n200: 120, n100: 200, n50: 100, n20: 100, n10: 150, coins: 850
+    n2000: 0, n500: 0, n200: 0, n100: 0, n50: 0, n20: 0, n10: 0, coins: 0
   });
 
-  const [customerList, setCustomerList] = useState(() => getMasterParties());
+  const [customerList, setCustomerList] = useState([]);
 
   // --- INITIAL SEED & RECTIFICATION ---
   useEffect(() => {
@@ -1263,8 +1313,8 @@ export function AppProvider({ children }) {
           totalAmount: 0
         })));
       } else {
-        const msRate = rates['Motor Spirit (Petrol)'] || 94.48;
-        const hsdRate = rates['High Speed Diesel'] || 90.16;
+        const msRate = rates['Motor Spirit (Petrol)'] || 0;
+        const hsdRate = rates['High Speed Diesel'] || 0;
         const default4 = [
           { date: targetDate, mpdId: 'MPD-1', nozzleId: 'N1 (MS)', productName: 'Motor Spirit (Petrol)', openingReading: 0, closingReading: 0, testingLitres: 0, salesLitres: 0, rate: msRate, totalAmount: 0 },
           { date: targetDate, mpdId: 'MPD-1', nozzleId: 'N2 (MS)', productName: 'Motor Spirit (Petrol)', openingReading: 0, closingReading: 0, testingLitres: 0, salesLitres: 0, rate: msRate, totalAmount: 0 },

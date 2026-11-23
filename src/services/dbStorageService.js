@@ -539,14 +539,15 @@ export async function fetchUserStationData(userId, defaultOverrides = {}) {
 
     // 2. First-time login: Initialize fresh default profile for that user_id
     const defaultProfile = {
-      fuelStationName: defaultOverrides.fuelStationName || 'SHITAL PETROL PUMP',
-      ownerName: defaultOverrides.ownerName || 'Station Owner',
-      managerName: defaultOverrides.managerName || 'Shift Manager',
+      fuelStationName: defaultOverrides.fuelStationName || '',
+      ownerName: defaultOverrides.ownerName || '',
+      managerName: defaultOverrides.managerName || '',
       phone: defaultOverrides.mobile || '',
       email: defaultOverrides.email || '',
       gstin: defaultOverrides.gstin || '',
       address: defaultOverrides.address || '',
-      openingShreeSilak: defaultOverrides.openingShreeSilak || 0
+      openingShreeSilak: defaultOverrides.openingShreeSilak || 0,
+      isOnboarded: false
     };
 
     const initialData = {
@@ -554,18 +555,18 @@ export async function fetchUserStationData(userId, defaultOverrides = {}) {
       station_profile: defaultProfile,
       nozzle_config: defaultOverrides.nozzles || [],
       fuel_rates: defaultOverrides.fuel_rates || {
-        'Motor Spirit (Petrol)': 94.48,
-        'High Speed Diesel': 90.16,
-        'Speed Petrol': 104.50,
-        'CNG': 75.80
+        'Motor Spirit (Petrol)': 0,
+        'High Speed Diesel': 0,
+        'Speed Petrol': 0,
+        'CNG': 0
       },
       dip_levels: defaultOverrides.dip_levels || {
-        msDipCm: 145,
-        msDipLiters: 10875,
-        hsdDipCm: 160,
-        hsdDipLiters: 16000,
-        speedDipCm: 120,
-        speedDipLiters: 9000
+        msDipCm: 0,
+        msDipLiters: 0,
+        hsdDipCm: 0,
+        hsdDipLiters: 0,
+        speedDipCm: 0,
+        speedDipLiters: 0
       },
       daily_shifts: [],
       other_accounts: {

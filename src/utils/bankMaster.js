@@ -3,11 +3,7 @@ import { db } from '../db/database';
 export const BANK_STORAGE_KEY = 'my_pump_master_bank_accounts';
 export const LEGACY_STORAGE_KEY = 'pump_bank_accounts_master';
 
-export const DEFAULT_BANKS = [
-  { id: 'bank-1', name: 'The Mehsana Urban Co-Op Bank Ltd', accountNumber: '00151304000095', branch: 'Kheralu Branch', balance: 0, deposits: [] },
-  { id: 'bank-2', name: 'State Bank of India', accountNumber: '30129481023', branch: 'Mehsana Highway', balance: 0, deposits: [] },
-  { id: 'bank-3', name: 'HDFC Bank Ltd', accountNumber: '5541098231', branch: 'Unjha Circle', balance: 0, deposits: [] }
-];
+export const DEFAULT_BANKS = [];
 
 export const DEFAULT_PUMP_BANKS = DEFAULT_BANKS;
 
@@ -37,12 +33,7 @@ export const getMasterBankAccounts = () => {
       }
     }
 
-    // Only set and return default banks on first-time launch when storage is null
-    const defaultsJson = JSON.stringify(DEFAULT_BANKS);
-    localStorage.setItem('pump_bank_accounts', defaultsJson);
-    localStorage.setItem(BANK_STORAGE_KEY, defaultsJson);
-    localStorage.setItem(LEGACY_STORAGE_KEY, defaultsJson);
-    return DEFAULT_BANKS;
+    return [];
   } catch (err) {
     console.error('Error reading master bank accounts:', err);
     return [];

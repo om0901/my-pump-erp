@@ -18,12 +18,13 @@ import TaxManagement from './components/tax/TaxManagement';
 import StaffAttendance from './components/staff/StaffAttendance';
 import BankHisab from './components/banking/BankHisab';
 import BackupSettings from './components/settings/BackupSettings';
+import OnboardingModal from './components/onboarding/OnboardingModal';
 
 import { CheckCircle2, AlertCircle, ChevronLeft, ChevronRight, Fuel, Loader2 } from 'lucide-react';
 import { useExcelNavigation } from './hooks/useExcelNavigation';
 
 function AppContent() {
-  const { activeTab, dbReady, toastMessage } = useApp();
+  const { activeTab, dbReady, toastMessage, stationProfile } = useApp();
   const { authLoading, isAuthenticated, session } = useAuth();
 
   // Attach Universal Excel-style 4-arrow key & Enter keyboard navigation across all modules
@@ -237,6 +238,11 @@ function AppContent() {
           {renderActiveModule()}
         </main>
       </div>
+
+      {/* First-Time User Onboarding Modal */}
+      {isAuthenticated && session && !stationProfile?.isOnboarded && (
+        <OnboardingModal />
+      )}
 
       {/* Toast Notification Banner */}
       {toastMessage && (

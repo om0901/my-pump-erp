@@ -14,7 +14,7 @@ export default function BackupSettings() {
     email: profile?.email || DEFAULT_STATION_PROFILE.email,
     ownerName: profile?.ownerName || DEFAULT_STATION_PROFILE.ownerName || '',
     managerName: profile?.managerName || DEFAULT_STATION_PROFILE.managerName || '',
-    openingShreeSilak: profile?.openingShreeSilak !== undefined ? profile.openingShreeSilak : 50000
+    openingShreeSilak: profile?.openingShreeSilak !== undefined ? profile.openingShreeSilak : 0
   });
 
   const [isSaving, setIsSaving] = useState(false);
@@ -29,7 +29,7 @@ export default function BackupSettings() {
         email: stationProfile.email || DEFAULT_STATION_PROFILE.email,
         ownerName: stationProfile.ownerName || '',
         managerName: stationProfile.managerName || '',
-        openingShreeSilak: stationProfile.openingShreeSilak !== undefined ? stationProfile.openingShreeSilak : 50000
+        openingShreeSilak: stationProfile.openingShreeSilak !== undefined ? stationProfile.openingShreeSilak : 0
       });
     }
   }, [stationProfile]);
@@ -75,10 +75,6 @@ export default function BackupSettings() {
               <Building2 className="w-4 h-4 text-blue-400" />
               <span>Fuel Station Business Profile</span>
             </h3>
-            <span className="text-[11px] font-mono font-medium text-emerald-400 flex items-center gap-1.5 bg-[#103a27] px-2.5 py-0.5 rounded-full border border-[#15803d]/40">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>Cloud Sync Active</span>
-            </span>
           </div>
 
           <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">

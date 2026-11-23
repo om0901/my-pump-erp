@@ -141,14 +141,7 @@ export default function Sidebar({ width = 260 }) {
               </button>
             </div>
           )
-        ) : (
-          !isCompact && (
-            <div className="text-[11px] font-semibold text-emerald-400 flex items-center justify-center gap-1.5 py-1 bg-emerald-950/30 rounded-lg border border-emerald-900/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Cloud Connected</span>
-            </div>
-          )
-        )}
+        ) : null}
 
         {!isCompact ? (
           <p className="text-[10px] font-normal leading-relaxed tracking-tight text-slate-400 pt-1 text-center">
