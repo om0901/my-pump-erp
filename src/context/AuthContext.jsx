@@ -19,7 +19,9 @@ export function AuthProvider({ children }) {
     const meta = user.user_metadata || {};
 
     let savedLocal = null;
+    let userOnboarded = false;
     try {
+      userOnboarded = localStorage.getItem(`mypump_${user.id}_onboarded`) === 'true' || localStorage.getItem('mypump_onboarded') === 'true';
       const s = localStorage.getItem(`mypump_${user.id}_station_profile`) || localStorage.getItem('station_profile');
       if (s) {
         const parsed = JSON.parse(s);
@@ -37,7 +39,7 @@ export function AuthProvider({ children }) {
       gstin: savedLocal?.gstin || meta.gstin || '',
       address: savedLocal?.address || meta.address || '',
       openingShreeSilak: savedLocal?.openingShreeSilak !== undefined ? parseFloat(savedLocal.openingShreeSilak) : (parseFloat(meta.openingShreeSilak) || 0),
-      isOnboarded: savedLocal?.isOnboarded !== undefined ? savedLocal.isOnboarded : (meta.isOnboarded !== undefined ? meta.isOnboarded : false),
+      isOnboarded: userOnboarded || Boolean(savedLocal?.isOnboarded) || Boolean(meta.isOnboarded),
       createdAt: user.created_at
     };
   };

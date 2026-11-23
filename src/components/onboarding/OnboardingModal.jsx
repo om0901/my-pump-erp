@@ -1,40 +1,76 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
-import { Fuel, IndianRupee, ArrowRight, Building2, Wallet, Loader2, Sparkles } from 'lucide-react';
+import { Fuel, IndianRupee, ArrowRight, Building2, Wallet, Loader2, Sparkles, X } from 'lucide-react';
 
-export default function OnboardingModal() {
-  const { stationProfile, updateStationProfile, showToast } = useApp();
+export default function OnboardingModal({ onClose }) {
+  const { stationProfile, updateStationProfile, setStationProfile, showToast } = useApp();
   const { currentUser } = useAuth();
 
+  const [isOpen, setIsOpen] = useState(true);
   const [openingSilak, setOpeningSilak] = useState('');
   const [stationName, setStationName] = useState(
     stationProfile?.fuelStationName || currentUser?.fuelStationName || ''
   );
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleClose = () => {
+    setIsOpen(false);
+    if (typeof onClose === 'function') {
+      onClose();
+    }
+  };
+
+  const handleSubmit = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     setSubmitting(true);
 
     const parsedSilak = parseFloat(openingSilak) || 0;
     const cleanName = (stationName || '').trim() || 'MY PETROL PUMP';
 
-    try {
-      await updateStationProfile({
-        fuelStationName: cleanName,
-        openingShreeSilak: parsedSilak,
-        openingSilak: parsedSilak,
-        isOnboarded: true
-      });
-      showToast('Station initialized successfully! Welcome to MY PUMP.', 'success');
-    } catch (err) {
-      console.error('[OnboardingModal] Error completing onboarding:', err);
-      showToast('Error saving station profile: ' + (err.message || err), 'error');
-    } finally {
-      setSubmitting(false);
+    // 1. IMMEDIATELY close the modal & mark onboarded in memory so it disappears instantly
+    setIsOpen(false);
+    if (typeof onClose === 'function') {
+      onClose();
     }
+
+    const updatedProfile = {
+      ...(stationProfile || {}),
+      fuelStationName: cleanName,
+      stationName: cleanName,
+      openingShreeSilak: parsedSilak,
+      openingSilak: parsedSilak,
+      isOnboarded: true
+    };
+
+    // Update in-memory station profile state
+    if (typeof setStationProfile === 'function') {
+      setStationProfile(updatedProfile);
+    }
+
+    // 2. Immediately persist flag in user-scoped localStorage so any reload/effect sees true
+    try {
+      if (currentUser?.id) {
+        localStorage.setItem(`mypump_${currentUser.id}_onboarded`, 'true');
+        localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(updatedProfile));
+      }
+      localStorage.setItem('mypump_onboarded', 'true');
+      localStorage.setItem('station_profile', JSON.stringify(updatedProfile));
+    } catch (e) {}
+
+    // 3. Sync to Supabase in background (do NOT await before closing modal)
+    try {
+      if (typeof updateStationProfile === 'function') {
+        updateStationProfile(updatedProfile);
+      }
+    } catch (err) {
+      console.warn('[OnboardingModal] Background sync error:', err);
+    }
+
+    showToast('Station initialized successfully! Welcome to MY PUMP.', 'success');
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md p-4 sm:p-6 animate-fadeIn select-none font-sans">
@@ -44,6 +80,15 @@ export default function OnboardingModal() {
         <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-600 p-6 text-white relative overflow-hidden">
           <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none" />
           
+          <button
+            type="button"
+            onClick={handleClose}
+            className="absolute top-4 right-4 p-1.5 rounded-full bg-black/10 hover:bg-black/20 text-white transition-colors cursor-pointer"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
           <div className="flex items-center gap-3 relative z-10">
             <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white shadow-inner">
               <Fuel className="w-6 h-6" />

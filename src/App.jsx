@@ -25,7 +25,33 @@ import { useExcelNavigation } from './hooks/useExcelNavigation';
 
 function AppContent() {
   const { activeTab, dbReady, toastMessage, stationProfile } = useApp();
-  const { authLoading, isAuthenticated, session } = useAuth();
+  const { authLoading, isAuthenticated, session, currentUser } = useAuth();
+
+  // Onboarding modal lock: If user is onboarded, NEVER open the modal
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      const activeUser = localStorage.getItem('mypump_current_user');
+      const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      if (userId && localStorage.getItem(`mypump_${userId}_onboarded`) === 'true') {
+        return false;
+      }
+      if (localStorage.getItem('mypump_onboarded') === 'true') {
+        return false;
+      }
+    } catch (e) {}
+    return !stationProfile?.isOnboarded;
+  });
+
+  useEffect(() => {
+    const isAlreadyOnboarded = Boolean(
+      stationProfile?.isOnboarded ||
+      (currentUser?.id && localStorage.getItem(`mypump_${currentUser.id}_onboarded`) === 'true') ||
+      localStorage.getItem('mypump_onboarded') === 'true'
+    );
+    if (isAlreadyOnboarded) {
+      setShowOnboarding(false);
+    }
+  }, [stationProfile?.isOnboarded, currentUser?.id]);
 
   // Attach Universal Excel-style 4-arrow key & Enter keyboard navigation across all modules
   useExcelNavigation();
@@ -240,8 +266,8 @@ function AppContent() {
       </div>
 
       {/* First-Time User Onboarding Modal */}
-      {isAuthenticated && session && !stationProfile?.isOnboarded && (
-        <OnboardingModal />
+      {isAuthenticated && session && showOnboarding && !stationProfile?.isOnboarded && !(currentUser?.id && localStorage.getItem(`mypump_${currentUser.id}_onboarded`) === 'true') && (
+        <OnboardingModal onClose={() => setShowOnboarding(false)} />
       )}
 
       {/* Toast Notification Banner */}

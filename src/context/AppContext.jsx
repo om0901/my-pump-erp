@@ -581,11 +581,18 @@ export function AppProvider({ children }) {
       const userId = activeUser ? JSON.parse(activeUser)?.id : null;
       const userScoped = userId ? localStorage.getItem(`mypump_${userId}_station_profile`) : null;
       const saved = userScoped || localStorage.getItem('station_profile');
+      const isOnboarded = Boolean(
+        (userId && localStorage.getItem(`mypump_${userId}_onboarded`) === 'true') ||
+        localStorage.getItem('mypump_onboarded') === 'true'
+      );
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
-          return { ...DEFAULT_STATION_PROFILE, ...parsed };
+          return { ...DEFAULT_STATION_PROFILE, ...parsed, isOnboarded: isOnboarded || Boolean(parsed.isOnboarded) };
         }
+      }
+      if (isOnboarded) {
+        return { ...DEFAULT_STATION_PROFILE, isOnboarded: true };
       }
     } catch (e) {}
     return DEFAULT_STATION_PROFILE;
@@ -598,7 +605,15 @@ export function AppProvider({ children }) {
         const rec = await db.settings.get('station_profile');
         if (rec) {
           const { id, key, ...cleanProfile } = rec;
-          setStationProfile(prev => ({ ...prev, ...cleanProfile }));
+          setStationProfile(prev => {
+            const onboarded = Boolean(
+              prev.isOnboarded ||
+              cleanProfile.isOnboarded ||
+              (currentUser?.id && localStorage.getItem(`mypump_${currentUser.id}_onboarded`) === 'true') ||
+              localStorage.getItem('mypump_onboarded') === 'true'
+            );
+            return { ...prev, ...cleanProfile, isOnboarded: onboarded };
+          });
           localStorage.setItem('station_profile', JSON.stringify(cleanProfile));
         }
 
@@ -740,10 +755,26 @@ export function AppProvider({ children }) {
 
         if (stationRow && typeof stationRow === 'object') {
           if (stationRow.station_profile) {
-            setStationProfile(prev => ({ ...prev, ...stationRow.station_profile }));
+            const hasOnboardedFlag = Boolean(
+              stationRow.station_profile?.isOnboarded ||
+              (currentUser?.id && localStorage.getItem(`mypump_${currentUser.id}_onboarded`) === 'true') ||
+              localStorage.getItem('mypump_onboarded') === 'true'
+            );
+            const mergedProfile = {
+              ...stationRow.station_profile,
+              isOnboarded: hasOnboardedFlag
+            };
+            setStationProfile(prev => ({
+              ...prev,
+              ...mergedProfile,
+              isOnboarded: hasOnboardedFlag || prev.isOnboarded
+            }));
             try {
-              localStorage.setItem('station_profile', JSON.stringify(stationRow.station_profile));
-              localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(stationRow.station_profile));
+              localStorage.setItem('station_profile', JSON.stringify(mergedProfile));
+              localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(mergedProfile));
+              if (hasOnboardedFlag && currentUser?.id) {
+                localStorage.setItem(`mypump_${currentUser.id}_onboarded`, 'true');
+              }
             } catch (e) {}
           }
           if (stationRow.fuel_rates) {
@@ -821,6 +852,14 @@ export function AppProvider({ children }) {
   }, [currentUser]);
 
   const updateStationProfile = async (newProfile) => {
+    const isNowOnboarded = Boolean(
+      newProfile.isOnboarded !== undefined ? newProfile.isOnboarded : (
+        stationProfile.isOnboarded ||
+        (currentUser?.id && localStorage.getItem(`mypump_${currentUser.id}_onboarded`) === 'true') ||
+        localStorage.getItem('mypump_onboarded') === 'true'
+      )
+    );
+
     const updated = {
       ...stationProfile,
       ...newProfile,
@@ -830,13 +869,20 @@ export function AppProvider({ children }) {
       gstin: (newProfile.gstin || stationProfile.gstin || '').trim(),
       address: (newProfile.address || stationProfile.address || '').trim(),
       email: (newProfile.email || stationProfile.email || '').trim(),
-      openingShreeSilak: newProfile.openingShreeSilak !== undefined ? parseFloat(newProfile.openingShreeSilak) || 0 : stationProfile.openingShreeSilak
+      openingShreeSilak: newProfile.openingShreeSilak !== undefined ? parseFloat(newProfile.openingShreeSilak) || 0 : stationProfile.openingShreeSilak,
+      isOnboarded: isNowOnboarded
     };
     setStationProfile(updated);
     try {
       localStorage.setItem('station_profile', JSON.stringify(updated));
       if (currentUser?.id) {
         localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(updated));
+        if (isNowOnboarded) {
+          localStorage.setItem(`mypump_${currentUser.id}_onboarded`, 'true');
+        }
+      }
+      if (isNowOnboarded) {
+        localStorage.setItem('mypump_onboarded', 'true');
       }
       await db.settings.put({ key: 'station_profile', id: 'station_profile', ...updated });
     } catch (e) {}

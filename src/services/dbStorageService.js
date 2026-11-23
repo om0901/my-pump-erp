@@ -527,7 +527,12 @@ export async function fetchUserStationData(userId, defaultOverrides = {}) {
     if (row) {
       // Hydrate local cache namespaced by user.id
       setScopedLocalData(userId, 'data', row);
-      if (row.station_profile) setScopedLocalData(userId, 'station_profile', row.station_profile);
+      if (row.station_profile) {
+        if (localStorage.getItem(`mypump_${userId}_onboarded`) === 'true' || localStorage.getItem('mypump_onboarded') === 'true') {
+          row.station_profile.isOnboarded = true;
+        }
+        setScopedLocalData(userId, 'station_profile', row.station_profile);
+      }
       if (row.fuel_rates) {
         setScopedLocalData(userId, 'locked_fuel_rates', row.fuel_rates);
         setScopedLocalData(userId, 'pump_last_fuel_rates', row.fuel_rates);
@@ -628,7 +633,13 @@ export async function upsertUserStationData(userId, snapshot = {}) {
 
     // 1. Immediately update namespaced local cache so UI is instantaneous
     setScopedLocalData(userId, 'data', payload);
-    if (payload.station_profile) setScopedLocalData(userId, 'station_profile', payload.station_profile);
+    if (payload.station_profile) {
+      if (localStorage.getItem(`mypump_${userId}_onboarded`) === 'true' || localStorage.getItem('mypump_onboarded') === 'true' || payload.station_profile.isOnboarded) {
+        payload.station_profile.isOnboarded = true;
+        setScopedLocalData(userId, 'onboarded', 'true');
+      }
+      setScopedLocalData(userId, 'station_profile', payload.station_profile);
+    }
     if (payload.fuel_rates) {
       setScopedLocalData(userId, 'locked_fuel_rates', payload.fuel_rates);
       setScopedLocalData(userId, 'pump_last_fuel_rates', payload.fuel_rates);
