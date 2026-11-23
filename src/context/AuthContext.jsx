@@ -12,39 +12,46 @@ export function AuthProvider({ children }) {
   // authModalMode: null | 'login' | 'signup'
   const [authModalMode, setAuthModalMode] = useState(null);
 
-  // Helper to construct a clean user profile from Supabase User & Metadata
+  // Helper to construct a clean user profile from Supabase User & Metadata,
+  // prioritizing saved user-scoped station profile over initial signup metadata
   const mapSupabaseUser = (user) => {
     if (!user) return null;
     const meta = user.user_metadata || {};
+
+    let savedLocal = null;
+    try {
+      const s = localStorage.getItem(`mypump_${user.id}_station_profile`) || localStorage.getItem('station_profile');
+      if (s) {
+        const parsed = JSON.parse(s);
+        if (parsed && typeof parsed === 'object') savedLocal = parsed;
+      }
+    } catch (e) {}
+
     return {
       id: user.id,
       email: user.email,
-      fuelStationName: meta.fuelStationName || 'SHITAL PETROL PUMP',
-      ownerName: meta.ownerName || 'Station Owner',
-      managerName: meta.managerName || 'Shift Manager',
-      mobile: meta.mobile || '',
-      gstin: meta.gstin || '',
-      address: meta.address || '',
-      openingShreeSilak: parseFloat(meta.openingShreeSilak) || 0,
+      fuelStationName: savedLocal?.fuelStationName || meta.fuelStationName || meta.station_name || 'SHITAL PETROL PUMP',
+      ownerName: savedLocal?.ownerName || meta.ownerName || meta.owner_name || 'Station Owner',
+      managerName: savedLocal?.managerName || meta.managerName || 'Shift Manager',
+      mobile: savedLocal?.phone || savedLocal?.mobile || meta.mobile || '',
+      gstin: savedLocal?.gstin || meta.gstin || '',
+      address: savedLocal?.address || meta.address || '',
+      openingShreeSilak: savedLocal?.openingShreeSilak !== undefined ? parseFloat(savedLocal.openingShreeSilak) : (parseFloat(meta.openingShreeSilak) || 0),
       createdAt: user.created_at
     };
   };
 
-  // Sync station profile with localStorage whenever currentUser changes
+  // Keep mypump_current_user synced in localStorage safely without overwriting station_profile
   useEffect(() => {
-    if (currentUser) {
-      const stationProf = {
-        fuelStationName: currentUser.fuelStationName,
-        gstin: currentUser.gstin,
-        address: currentUser.address,
-        phone: currentUser.mobile,
-        email: currentUser.email,
-        ownerName: currentUser.ownerName,
-        managerName: currentUser.managerName,
-        openingShreeSilak: currentUser.openingShreeSilak
-      };
-      localStorage.setItem('station_profile', JSON.stringify(stationProf));
-      localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(stationProf));
+    if (currentUser?.id) {
+      try {
+        localStorage.setItem('mypump_current_user', JSON.stringify({
+          id: currentUser.id,
+          email: currentUser.email,
+          fuelStationName: currentUser.fuelStationName,
+          ownerName: currentUser.ownerName
+        }));
+      } catch (e) {}
     }
   }, [currentUser]);
 

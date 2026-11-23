@@ -6,6 +6,7 @@ import { getMasterParties, saveMasterParties } from '../utils/partyMaster';
 import { useAuth } from './AuthContext';
 import { syncStationDataToCloud, pullStationDataFromCloud } from '../services/supabaseSyncService';
 import { fetchUserStationData, upsertUserStationData } from '../services/dbStorageService';
+import { supabase } from '../lib/supabaseClient';
 
 const AppContext = createContext();
 
@@ -586,10 +587,15 @@ export function AppProvider({ children }) {
   // --- STATION PROFILE & BUSINESS SETTINGS ---
   const [stationProfile, setStationProfile] = useState(() => {
     try {
-      const saved = localStorage.getItem('station_profile');
+      const activeUser = localStorage.getItem('mypump_current_user');
+      const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      const userScoped = userId ? localStorage.getItem(`mypump_${userId}_station_profile`) : null;
+      const saved = userScoped || localStorage.getItem('station_profile');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return { ...DEFAULT_STATION_PROFILE, ...(parsed || {}) };
+        if (parsed && typeof parsed === 'object') {
+          return { ...DEFAULT_STATION_PROFILE, ...parsed };
+        }
       }
     } catch (e) {}
     return DEFAULT_STATION_PROFILE;
@@ -703,18 +709,33 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!currentUser?.id) return;
 
-    // 1. Sync station profile from Supabase user_metadata if present
-    const meta = currentUser || {};
-    if (meta.fuelStationName || meta.ownerName || meta.mobile || meta.gstin) {
-      setStationProfile(prev => ({
-        ...prev,
-        fuelStationName: meta.fuelStationName || prev.fuelStationName,
-        ownerName: meta.ownerName || prev.ownerName,
-        mobile: meta.mobile || prev.mobile,
-        gstin: meta.gstin || prev.gstin,
-        address: meta.address || prev.address,
-        openingShreeSilak: meta.openingShreeSilak !== undefined ? meta.openingShreeSilak : prev.openingShreeSilak
-      }));
+    // 1. First check user-scoped local cache to avoid overwriting with stale signup metadata
+    let hasLocalUserConfig = false;
+    try {
+      const userScoped = localStorage.getItem(`mypump_${currentUser.id}_station_profile`);
+      if (userScoped) {
+        const parsed = JSON.parse(userScoped);
+        if (parsed && typeof parsed === 'object') {
+          setStationProfile(prev => ({ ...prev, ...parsed }));
+          hasLocalUserConfig = true;
+        }
+      }
+    } catch (e) {}
+
+    // Only apply currentUser metadata if no user-scoped local config was found
+    if (!hasLocalUserConfig) {
+      const meta = currentUser || {};
+      if (meta.fuelStationName || meta.ownerName || meta.mobile || meta.gstin) {
+        setStationProfile(prev => ({
+          ...prev,
+          fuelStationName: meta.fuelStationName || prev.fuelStationName,
+          ownerName: meta.ownerName || prev.ownerName,
+          mobile: meta.mobile || prev.mobile,
+          gstin: meta.gstin || prev.gstin,
+          address: meta.address || prev.address,
+          openingShreeSilak: meta.openingShreeSilak !== undefined ? meta.openingShreeSilak : prev.openingShreeSilak
+        }));
+      }
     }
 
     // 2. Fetch account-wise station data from Supabase Cloud (pump_station_data) with local namespaced caching
@@ -730,6 +751,10 @@ export function AppProvider({ children }) {
         if (stationRow && typeof stationRow === 'object') {
           if (stationRow.station_profile) {
             setStationProfile(prev => ({ ...prev, ...stationRow.station_profile }));
+            try {
+              localStorage.setItem('station_profile', JSON.stringify(stationRow.station_profile));
+              localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(stationRow.station_profile));
+            } catch (e) {}
           }
           if (stationRow.fuel_rates) {
             setRates(prev => ({ ...prev, ...stationRow.fuel_rates }));
@@ -754,7 +779,13 @@ export function AppProvider({ children }) {
           // Fallback to metadata snapshot if Postgres row not yet available
           const cloudData = await pullStationDataFromCloud(currentUser);
           if (cloudData && typeof cloudData === 'object') {
-            if (cloudData.stationProfile) setStationProfile(prev => ({ ...prev, ...cloudData.stationProfile }));
+            if (cloudData.stationProfile) {
+              setStationProfile(prev => ({ ...prev, ...cloudData.stationProfile }));
+              try {
+                localStorage.setItem('station_profile', JSON.stringify(cloudData.stationProfile));
+                localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(cloudData.stationProfile));
+              } catch (e) {}
+            }
             if (cloudData.rates) setRates(prev => ({ ...prev, ...cloudData.rates }));
             if (cloudData.nozzles) setNozzles(cloudData.nozzles);
             if (cloudData.dips) setDips(prev => ({ ...prev, ...cloudData.dips }));
@@ -770,17 +801,53 @@ export function AppProvider({ children }) {
   }, [currentUser]);
 
   const updateStationProfile = async (newProfile) => {
-    const updated = { ...stationProfile, ...newProfile };
+    const updated = {
+      ...stationProfile,
+      ...newProfile,
+      fuelStationName: (newProfile.fuelStationName || newProfile.stationName || stationProfile.fuelStationName || '').trim(),
+      ownerName: (newProfile.ownerName || stationProfile.ownerName || '').trim(),
+      phone: (newProfile.phone || newProfile.mobile || stationProfile.phone || '').trim(),
+      gstin: (newProfile.gstin || stationProfile.gstin || '').trim(),
+      address: (newProfile.address || stationProfile.address || '').trim(),
+      email: (newProfile.email || stationProfile.email || '').trim(),
+      openingShreeSilak: newProfile.openingShreeSilak !== undefined ? parseFloat(newProfile.openingShreeSilak) || 0 : stationProfile.openingShreeSilak
+    };
     setStationProfile(updated);
     try {
       localStorage.setItem('station_profile', JSON.stringify(updated));
-      await db.settings.put({ key: 'station_profile', id: 'station_profile', ...updated });
-      
-      // Sync to Supabase Cloud strictly scoped to authenticated user
       if (currentUser?.id) {
-        syncStationDataToCloud(currentUser.id, { stationProfile: updated }).catch(err => {
-          console.warn('Cloud sync error on station profile update:', err);
+        localStorage.setItem(`mypump_${currentUser.id}_station_profile`, JSON.stringify(updated));
+      }
+      await db.settings.put({ key: 'station_profile', id: 'station_profile', ...updated });
+    } catch (e) {}
+
+    // Sync to Supabase Cloud strictly scoped to authenticated user
+    if (currentUser?.id) {
+      try {
+        await upsertUserStationData(currentUser.id, { stationProfile: updated, rates, nozzles, dips });
+      } catch (err) {
+        console.warn('upsertUserStationData error:', err);
+      }
+      try {
+        await syncStationDataToCloud(currentUser.id, { stationProfile: updated });
+      } catch (err) {
+        console.warn('syncStationDataToCloud error:', err);
+      }
+      try {
+        await supabase.auth.updateUser({
+          data: {
+            fuelStationName: updated.fuelStationName,
+            station_name: updated.fuelStationName,
+            ownerName: updated.ownerName,
+            owner_name: updated.ownerName,
+            mobile: updated.phone,
+            gstin: updated.gstin,
+            address: updated.address,
+            openingShreeSilak: updated.openingShreeSilak
+          }
         });
+      } catch (err) {
+        console.warn('supabase.auth.updateUser error:', err);
       }
 
       // Sync React AuthContext state (currentUser) so header badge updates immediately without reload
@@ -791,17 +858,19 @@ export function AppProvider({ children }) {
           ...baseUser,
           ownerName: updated.ownerName || '',
           fuelStationName: updated.fuelStationName || baseUser.fuelStationName || '',
+          mobile: updated.phone || baseUser.mobile || '',
+          gstin: updated.gstin || baseUser.gstin || '',
+          address: updated.address || baseUser.address || '',
+          openingShreeSilak: updated.openingShreeSilak
         };
         localStorage.setItem('mypump_current_user', JSON.stringify(syncedUser));
         if (typeof setCurrentUser === 'function') {
           setCurrentUser(prev => ({ ...prev, ...syncedUser }));
         }
       } catch (e) {}
-      showToast('✅ Fuel Station Profile Updated Successfully!', 'success');
-    } catch (err) {
-      console.error('Error saving station profile:', err);
-      showToast('Error updating profile: ' + err.message, 'error');
     }
+    showToast('Fuel Station Profile saved & synced to cloud!', 'success');
+    return updated;
   };
 
   // --- GLOBAL REACTIVE SHIFT STATE ---
