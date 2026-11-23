@@ -8,9 +8,9 @@ import { calculateNozzleSales } from '../../utils/petroleumMath';
 export default function DailyNozzleSheet() {
   const { selectedDate, activeShift, showToast, nozzles, setNozzles, dbReady } = useApp();
   const [globalRates, setGlobalRates] = useState({
-    'High Speed Diesel': 90.16,
-    'Motor Spirit (Petrol)': 94.48,
-    'XP Premium Petrol': 102.50,
+    'High Speed Diesel': 0,
+    'Motor Spirit (Petrol)': 0,
+    'XP Premium Petrol': 0,
   });
 
   // ✅ FIX: Add Nozzle — correctly adds a new nozzle row with mpdId
@@ -19,8 +19,8 @@ export default function DailyNozzleSheet() {
     const isPetrol = nextIndex % 2 !== 0;
     const defaultProduct = isPetrol ? 'Motor Spirit (Petrol)' : 'High Speed Diesel';
     const defaultRate = isPetrol
-      ? (globalRates['Motor Spirit (Petrol)'] || 94.48)
-      : (globalRates['High Speed Diesel'] || 90.16);
+      ? (globalRates['Motor Spirit (Petrol)'] ?? 0)
+      : (globalRates['High Speed Diesel'] ?? 0);
 
     const mpdNum = Math.ceil(nextIndex / 4);
     const newNozzle = {

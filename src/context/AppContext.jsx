@@ -924,11 +924,16 @@ export function AppProvider({ children }) {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
+          const parseRate = (val) => {
+            if (val === undefined || val === null || val === '') return 0;
+            const n = parseFloat(val);
+            return Number.isNaN(n) ? 0 : Math.max(0, n);
+          };
           return {
-            'Motor Spirit (Petrol)': parseFloat(parsed['Motor Spirit (Petrol)']) || 0,
-            'High Speed Diesel': parseFloat(parsed['High Speed Diesel']) || 0,
-            'Speed Petrol': parseFloat(parsed['Speed Petrol'] || parsed['XP Premium Petrol']) || 0,
-            'CNG': parseFloat(parsed['CNG']) || 0
+            'Motor Spirit (Petrol)': parseRate(parsed['Motor Spirit (Petrol)']),
+            'High Speed Diesel': parseRate(parsed['High Speed Diesel']),
+            'Speed Petrol': parseRate(parsed['Speed Petrol'] ?? parsed['XP Premium Petrol']),
+            'CNG': parseRate(parsed['CNG'])
           };
         }
       }
@@ -1135,21 +1140,21 @@ export function AppProvider({ children }) {
 
         const dipVal = exactSnapshot.tankDips || exactSnapshot.tank_stocks || exactSnapshot.dips;
         setDips({
-          msDipCm: 145,
-          msDipLiters: 10875,
-          hsdDipCm: 160,
-          hsdDipLiters: 16000,
-          speedDipCm: 120,
-          speedDipLiters: 9000,
+          msDipCm: 0,
+          msDipLiters: 0,
+          hsdDipCm: 0,
+          hsdDipLiters: 0,
+          speedDipCm: 0,
+          speedDipLiters: 0,
           ...(typeof dipVal === 'object' && dipVal !== null ? dipVal : {})
         });
 
         const rateVal = exactSnapshot.fuelRates || exactSnapshot.fuel_rates || exactSnapshot.rates;
         setRates({
-          'Motor Spirit (Petrol)': 94.48,
-          'High Speed Diesel': 90.16,
-          'Speed Petrol': 104.50,
-          'CNG': 75.80,
+          'Motor Spirit (Petrol)': 0,
+          'High Speed Diesel': 0,
+          'Speed Petrol': 0,
+          'CNG': 0,
           ...(typeof rateVal === 'object' && rateVal !== null ? rateVal : {})
         });
 
@@ -1368,10 +1373,9 @@ export function AppProvider({ children }) {
       setOtherIncomeEntries([
         { accountId: defaultPartyId, partyName: defaultPartyName || 'om', category: defaultPartyName || 'om', description: '', amount: 0 }
       ]);
-      const fallbackMsRate = 94.48;
-      const firstCustName = 'Mukeshbhai Charada';
+      const currentMsRate = rates['Motor Spirit (Petrol)'] ?? 0;
       setDebitEntries([
-        { customerId: 1, customerName: firstCustName, vehicleNo: '', billNo: '', billType: 'Debit Bill', fuelProduct: 'MS Petrol', fuelType: 'MS Petrol', litres: 0, slipNo: '', rate: fallbackMsRate, amount: 0 }
+        { customerId: '', customerName: '', vehicleNo: '', billNo: '', billType: 'Debit Bill', fuelProduct: 'MS Petrol', fuelType: 'MS Petrol', litres: 0, slipNo: '', rate: currentMsRate, amount: 0 }
       ]);
       setSmartBalanceEntries([
         { provider: 'PhonePe QR', txnId: '', txnCount: 0, settledAmount: 0, feeDeduction: 0, netReceived: 0 }
@@ -1844,9 +1848,9 @@ export function useApp() {
       },
       setSellPatrakLiveFeed: () => {},
       updateSellPatrakFeed: () => {},
-      dips: { msDipCm: 145, hsdDipCm: 160, speedDipCm: 120 },
+      dips: { msDipCm: 0, hsdDipCm: 0, speedDipCm: 0 },
       setDips: () => {},
-      rates: { 'Motor Spirit (Petrol)': 94.48, 'High Speed Diesel': 90.16, 'Speed Petrol': 104.50, 'CNG': 75.80 },
+      rates: { 'Motor Spirit (Petrol)': 0, 'High Speed Diesel': 0, 'Speed Petrol': 0, 'CNG': 0 },
       setRates: () => {},
       nozzles: [],
       setNozzles: () => {},

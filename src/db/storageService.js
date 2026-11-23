@@ -493,10 +493,10 @@ export async function processSellPatrakSync(shiftDate, dailyData) {
   const CNGCS = Number(Math.max(0, CNG - DBCNG).toFixed(2));
 
   // 4. Read Live Fuel Rates
-  const msRate = parseFloat(rates['Motor Spirit (Petrol)'] ?? rates['MS Petrol'] ?? rates.msPetrol) || 94.48;
-  const hsdRate = parseFloat(rates['High Speed Diesel'] ?? rates['HSD Diesel'] ?? rates.hsdDiesel) || 90.16;
-  const speedRate = parseFloat(rates['Speed Petrol'] ?? rates['XP Premium Petrol'] ?? rates.speedRate) || 104.50;
-  const cngRate = parseFloat(rates['CNG'] ?? rates.cngRate) || 75.80;
+  const msRate = parseFloat(rates['Motor Spirit (Petrol)'] ?? rates['MS Petrol'] ?? rates.msPetrol) || 0;
+  const hsdRate = parseFloat(rates['High Speed Diesel'] ?? rates['HSD Diesel'] ?? rates.hsdDiesel) || 0;
+  const speedRate = parseFloat(rates['Speed Petrol'] ?? rates['XP Premium Petrol'] ?? rates.speedRate) || 0;
+  const cngRate = parseFloat(rates['CNG'] ?? rates.cngRate) || 0;
 
   try {
     const rec = await db.settings.get(storageKey);

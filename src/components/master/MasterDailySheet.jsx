@@ -594,15 +594,19 @@ export default function MasterDailySheet() {
     const norm = getNormalizedProductName(pName);
     const r = rates || {};
     if (norm === 'High Speed Diesel') {
-      return r['High Speed Diesel'] || 90.16;
+      const val = r['High Speed Diesel'];
+      return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
     }
     if (norm === 'XP Premium Petrol') {
-      return r['Speed Petrol'] || r['XP Premium Petrol'] || 104.50;
+      const val = r['Speed Petrol'] !== undefined && r['Speed Petrol'] !== '' ? r['Speed Petrol'] : r['XP Premium Petrol'];
+      return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
     }
     if (norm === 'CNG') {
-      return r['CNG'] || 75.80;
+      const val = r['CNG'];
+      return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
     }
-    return r['Motor Spirit (Petrol)'] || 94.48;
+    const val = r['Motor Spirit (Petrol)'];
+    return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
   };
 
   const normalizeFuelProduct = (val) => {
@@ -616,10 +620,62 @@ export default function MasterDailySheet() {
 
   const getFuelRate = (fuelProduct) => {
     const norm = normalizeFuelProduct(fuelProduct);
-    if (norm === 'HSD Diesel') return parseFloat(rates['High Speed Diesel']) || 90.16;
-    if (norm === 'Speed Petrol') return parseFloat(rates['Speed Petrol'] || rates['XP Premium Petrol']) || 104.50;
-    if (norm === 'CNG') return parseFloat(rates['CNG']) || 75.80;
-    return parseFloat(rates['Motor Spirit (Petrol)']) || 94.48;
+    const r = rates || {};
+    if (norm === 'HSD Diesel') {
+      const val = r['High Speed Diesel'];
+      return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
+    }
+    if (norm === 'Speed Petrol') {
+      const val = r['Speed Petrol'] !== undefined && r['Speed Petrol'] !== '' ? r['Speed Petrol'] : r['XP Premium Petrol'];
+      return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
+    }
+    if (norm === 'CNG') {
+      const val = r['CNG'];
+      return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
+    }
+    const val = r['Motor Spirit (Petrol)'];
+    return val !== undefined && val !== '' && !Number.isNaN(Number(val)) ? Number(val) : 0;
+  };
+
+  const handleRateChange = (fuelKey, rawValue) => {
+    // Allow empty string while typing so user can clear and type 0
+    if (rawValue === '') {
+      setRates(prev => ({ ...prev, [fuelKey]: '' }));
+      return;
+    }
+    const numVal = parseFloat(rawValue);
+    const cleanVal = Number.isNaN(numVal) ? 0 : Math.max(0, numVal);
+    setRates(prev => {
+      const updated = { ...prev, [fuelKey]: cleanVal };
+      try {
+        localStorage.setItem('pump_last_fuel_rates', JSON.stringify(updated));
+        const activeUser = localStorage.getItem('mypump_current_user');
+        const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+        if (userId) {
+          localStorage.setItem(`mypump_${userId}_pump_last_fuel_rates`, JSON.stringify(updated));
+        }
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleRateBlur = (fuelKey) => {
+    setRates(prev => {
+      const currentVal = prev[fuelKey];
+      if (currentVal === '' || currentVal === null || currentVal === undefined || Number.isNaN(Number(currentVal))) {
+        const updated = { ...prev, [fuelKey]: 0 };
+        try {
+          localStorage.setItem('pump_last_fuel_rates', JSON.stringify(updated));
+          const activeUser = localStorage.getItem('mypump_current_user');
+          const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+          if (userId) {
+            localStorage.setItem(`mypump_${userId}_pump_last_fuel_rates`, JSON.stringify(updated));
+          }
+        } catch (e) {}
+        return updated;
+      }
+      return prev;
+    });
   };
 
   // --- Section E Real-time Dynamic Breakdown Accumulators ---
@@ -1211,7 +1267,7 @@ export default function MasterDailySheet() {
         { category: defaultParty || 'om', description: '', amount: 0 }
       ]);
       setDebitEntries([
-        { customerId: activePartiesList[0]?.id || '', customerName: activePartiesList[0]?.name || '', vehicleNo: '', billNo: '', billType: 'Debit Bill', fuelProduct: 'MS Petrol', fuelType: 'MS Petrol', litres: 0, slipNo: '', rate: rates['Motor Spirit (Petrol)'] || 94.48, amount: 0 }
+        { customerId: activePartiesList[0]?.id || '', customerName: activePartiesList[0]?.name || '', vehicleNo: '', billNo: '', billType: 'Debit Bill', fuelProduct: 'MS Petrol', fuelType: 'MS Petrol', litres: 0, slipNo: '', rate: rates['Motor Spirit (Petrol)'] ?? 0, amount: 0 }
       ]);
       setDigitalPayEntries([]);
       setSmartMoneyEntries([]);
@@ -1314,8 +1370,8 @@ export default function MasterDailySheet() {
 
       const newMpdId = `MPD-${nextNum}`;
       const startIdx = (nextNum - 1) * 4 + 1;
-      const msRate = rates?.['Motor Spirit (Petrol)'] || 94.48;
-      const hsdRate = rates?.['High Speed Diesel'] || 90.16;
+      const msRate = rates?.['Motor Spirit (Petrol)'] ?? 0;
+      const hsdRate = rates?.['High Speed Diesel'] ?? 0;
 
       const nextMpdList = Array.from(new Set([...mpdList, newMpdId])).sort((a, b) => {
         return (parseInt(a.replace('MPD-', ''), 10) || 0) - (parseInt(b.replace('MPD-', ''), 10) || 0);
@@ -1391,7 +1447,7 @@ export default function MasterDailySheet() {
       const nextNozzleNum = maxN > 0 ? maxN + 1 : (mpdNum - 1) * 4 + numInMpd;
       const isDiesel = nextNozzleNum % 2 === 0;
       const defaultProduct = isDiesel ? 'High Speed Diesel' : 'Motor Spirit (Petrol)';
-      const defaultRate = rates?.[defaultProduct] || (isDiesel ? 90.16 : 94.48);
+      const defaultRate = rates?.[defaultProduct] ?? 0;
 
       const newNozzle = {
         _localId: Date.now() + Math.random(),
@@ -1555,7 +1611,7 @@ export default function MasterDailySheet() {
           fuelType: 'MS Petrol',
           litres: 0,
           slipNo: '',
-          rate: rates['Motor Spirit (Petrol)'] || 94.48,
+          rate: rates['Motor Spirit (Petrol)'] ?? 0,
           amount: 0
         }
       ]);
@@ -1722,10 +1778,10 @@ export default function MasterDailySheet() {
       startY += 3;
 
       const tankRows = [
-        ['MS Petrol Tank', `${dips.msDipCm || 0} cm`, `${msEffectiveLitres.toLocaleString()} L`, `₹${rates['Motor Spirit (Petrol)'] || 94.48}`],
-        ['HSD Diesel Tank', `${dips.hsdDipCm || 0} cm`, `${hsdEffectiveLitres.toLocaleString()} L`, `₹${rates['High Speed Diesel'] || 90.16}`],
-        ['Speed Petrol Tank', `${dips.speedDipCm || 0} cm`, `${speedEffectiveLitres.toLocaleString()} L`, `₹${rates['Speed Petrol'] || rates['XP Premium Petrol'] || 104.50}`],
-        ['CNG Rate Matrix', 'N/A', 'N/A', `₹${rates['CNG'] || 75.80}`]
+        ['MS Petrol Tank', `${dips.msDipCm || 0} cm`, `${msEffectiveLitres.toLocaleString()} L`, `₹${rates['Motor Spirit (Petrol)'] ?? 0}`],
+        ['HSD Diesel Tank', `${dips.hsdDipCm || 0} cm`, `${hsdEffectiveLitres.toLocaleString()} L`, `₹${rates['High Speed Diesel'] ?? 0}`],
+        ['Speed Petrol Tank', `${dips.speedDipCm || 0} cm`, `${speedEffectiveLitres.toLocaleString()} L`, `₹${rates['Speed Petrol'] ?? rates['XP Premium Petrol'] ?? 0}`],
+        ['CNG Rate Matrix', 'N/A', 'N/A', `₹${rates['CNG'] ?? 0}`]
       ];
 
       autoTable(doc, {
@@ -3002,8 +3058,11 @@ export default function MasterDailySheet() {
                   <span className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">₹</span>
                   <NumericInput
                     step="0.01"
-                    value={rates['Motor Spirit (Petrol)']}
-                    onChange={(val) => setRates({ ...rates, 'Motor Spirit (Petrol)': parseFloat(val) || 0 })}
+                    min="0"
+                    placeholder="0.00"
+                    value={rates['Motor Spirit (Petrol)'] !== undefined ? rates['Motor Spirit (Petrol)'] : 0}
+                    onChange={(val) => handleRateChange('Motor Spirit (Petrol)', val)}
+                    onBlur={() => handleRateBlur('Motor Spirit (Petrol)')}
                     className="w-16 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 font-bold text-xs px-1.5 py-0.5 rounded text-right font-mono outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
                   />
                 </div>
@@ -3016,8 +3075,11 @@ export default function MasterDailySheet() {
                   <span className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">₹</span>
                   <NumericInput
                     step="0.01"
-                    value={rates['High Speed Diesel']}
-                    onChange={(val) => setRates({ ...rates, 'High Speed Diesel': parseFloat(val) || 0 })}
+                    min="0"
+                    placeholder="0.00"
+                    value={rates['High Speed Diesel'] !== undefined ? rates['High Speed Diesel'] : 0}
+                    onChange={(val) => handleRateChange('High Speed Diesel', val)}
+                    onBlur={() => handleRateBlur('High Speed Diesel')}
                     className="w-16 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 font-bold text-xs px-1.5 py-0.5 rounded text-right font-mono outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
                   />
                 </div>
@@ -3030,8 +3092,11 @@ export default function MasterDailySheet() {
                   <span className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">₹</span>
                   <NumericInput
                     step="0.01"
-                    value={rates['Speed Petrol'] || rates['XP Premium Petrol'] || 104.50}
-                    onChange={(val) => setRates({ ...rates, 'Speed Petrol': parseFloat(val) || 0 })}
+                    min="0"
+                    placeholder="0.00"
+                    value={(rates['Speed Petrol'] !== undefined && rates['Speed Petrol'] !== '') ? rates['Speed Petrol'] : (rates['XP Premium Petrol'] !== undefined ? rates['XP Premium Petrol'] : 0)}
+                    onChange={(val) => handleRateChange('Speed Petrol', val)}
+                    onBlur={() => handleRateBlur('Speed Petrol')}
                     className="w-16 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 font-bold text-xs px-1.5 py-0.5 rounded text-right font-mono outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
                   />
                 </div>
@@ -3044,8 +3109,11 @@ export default function MasterDailySheet() {
                   <span className="text-slate-700 dark:text-slate-300 text-xs font-mono font-bold">₹</span>
                   <NumericInput
                     step="0.01"
-                    value={rates['CNG'] || 75.80}
-                    onChange={(val) => setRates({ ...rates, 'CNG': parseFloat(val) || 0 })}
+                    min="0"
+                    placeholder="0.00"
+                    value={rates['CNG'] !== undefined ? rates['CNG'] : 0}
+                    onChange={(val) => handleRateChange('CNG', val)}
+                    onBlur={() => handleRateBlur('CNG')}
                     className="w-16 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-700 font-bold text-xs px-1.5 py-0.5 rounded text-right font-mono outline-none focus:ring-2 focus:ring-blue-500 tabular-nums"
                   />
                 </div>
@@ -3768,10 +3836,10 @@ export default function MasterDailySheet() {
                   onChange={(e) => updateDebitEntry(idx, 'fuelProduct', e.target.value)}
                   className="w-full bg-[#172033] border border-[#23304a] text-slate-100 text-xs px-2 py-1 rounded outline-none cursor-pointer"
                 >
-                  <option value="MS Petrol" className="bg-[#121927]">MS (₹{(rates['Motor Spirit (Petrol)'] || 94.48).toFixed(2)})</option>
-                  <option value="HSD Diesel" className="bg-[#121927]">HSD (₹{(rates['High Speed Diesel'] || 90.16).toFixed(2)})</option>
-                  <option value="Speed Petrol" className="bg-[#121927]">XP Speed (₹{(rates['Speed Petrol'] || rates['XP Premium Petrol'] || 104.50).toFixed(2)})</option>
-                  <option value="CNG" className="bg-[#121927]">CNG (₹{(rates['CNG'] || 75.80).toFixed(2)})</option>
+                  <option value="MS Petrol" className="bg-[#121927]">MS (₹{(Number(rates['Motor Spirit (Petrol)'] ?? 0) || 0).toFixed(2)})</option>
+                  <option value="HSD Diesel" className="bg-[#121927]">HSD (₹{(Number(rates['High Speed Diesel'] ?? 0) || 0).toFixed(2)})</option>
+                  <option value="Speed Petrol" className="bg-[#121927]">XP Speed (₹{(Number(rates['Speed Petrol'] ?? rates['XP Premium Petrol'] ?? 0) || 0).toFixed(2)})</option>
+                  <option value="CNG" className="bg-[#121927]">CNG (₹{(Number(rates['CNG'] ?? 0) || 0).toFixed(2)})</option>
                 </select>
               </div>
 
