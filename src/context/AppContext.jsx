@@ -919,8 +919,9 @@ export function AppProvider({ children }) {
     try {
       const activeUser = localStorage.getItem('mypump_current_user');
       const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      const lockedKey = userId ? `mypump_${userId}_locked_fuel_rates` : null;
       const key = userId ? `mypump_${userId}_pump_last_fuel_rates` : 'pump_last_fuel_rates';
-      const saved = localStorage.getItem(key);
+      const saved = (lockedKey ? localStorage.getItem(lockedKey) : null) || localStorage.getItem(key) || localStorage.getItem('pump_last_fuel_rates');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
@@ -945,6 +946,52 @@ export function AppProvider({ children }) {
       'CNG': 0,
     };
   });
+
+  const lockFuelRates = async (newRates) => {
+    const parseVal = (v) => {
+      if (v === undefined || v === null || v === '') return 0;
+      const n = parseFloat(v);
+      return Number.isNaN(n) ? 0 : Math.max(0, n);
+    };
+    const cleanRates = {
+      'Motor Spirit (Petrol)': parseVal(newRates['Motor Spirit (Petrol)']),
+      'High Speed Diesel': parseVal(newRates['High Speed Diesel']),
+      'Speed Petrol': parseVal(newRates['Speed Petrol'] ?? newRates['XP Premium Petrol']),
+      'CNG': parseVal(newRates['CNG']),
+    };
+    setRates(cleanRates);
+    try {
+      localStorage.setItem('pump_last_fuel_rates', JSON.stringify(cleanRates));
+      if (currentUser?.id) {
+        localStorage.setItem(`mypump_${currentUser.id}_locked_fuel_rates`, JSON.stringify(cleanRates));
+        localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(cleanRates));
+      }
+      if (dbReady) {
+        await db.settings.put({
+          key: 'pump_last_fuel_rates',
+          data: cleanRates,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {
+      console.warn('[lockFuelRates] Local save warning:', e);
+    }
+
+    if (currentUser?.id) {
+      try {
+        await upsertUserStationData(currentUser.id, {
+          fuel_rates: cleanRates,
+          rates: cleanRates,
+          nozzles,
+          dips,
+          stationProfile
+        });
+      } catch (err) {
+        console.warn('[lockFuelRates] Cloud upsert error:', err);
+      }
+    }
+    return cleanRates;
+  };
 
   const [nozzles, setNozzles] = useState(() => {
     try {
@@ -1334,20 +1381,34 @@ export function AppProvider({ children }) {
         setDips(prevSnapshot.tankDips);
       }
 
-      // Carry forward fuel rates: check prevSnapshot, then pump_last_fuel_rates
-      if (prevSnapshot && prevSnapshot.fuelRates) {
-        setRates(prevSnapshot.fuelRates);
-      } else {
-        try {
-          const savedRates = localStorage.getItem('pump_last_fuel_rates');
-          if (savedRates) {
-            const parsedRates = JSON.parse(savedRates);
-            if (parsedRates && typeof parsedRates === 'object') {
-              setRates(prev => ({ ...prev, ...parsedRates }));
-            }
+      // Carry forward or preserve active locked fuel rates
+      try {
+        const activeUser = localStorage.getItem('mypump_current_user');
+        const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+        const lockedKey = userId ? `mypump_${userId}_locked_fuel_rates` : null;
+        const userKey = userId ? `mypump_${userId}_pump_last_fuel_rates` : null;
+        const saved = (lockedKey ? localStorage.getItem(lockedKey) : null) ||
+                      (userKey ? localStorage.getItem(userKey) : null) ||
+                      localStorage.getItem('pump_last_fuel_rates');
+        if (saved) {
+          const parsedRates = JSON.parse(saved);
+          if (parsedRates && typeof parsedRates === 'object') {
+            const parseRate = (val) => {
+              if (val === undefined || val === null || val === '') return 0;
+              const n = parseFloat(val);
+              return Number.isNaN(n) ? 0 : Math.max(0, n);
+            };
+            setRates({
+              'Motor Spirit (Petrol)': parseRate(parsedRates['Motor Spirit (Petrol)']),
+              'High Speed Diesel': parseRate(parsedRates['High Speed Diesel']),
+              'Speed Petrol': parseRate(parsedRates['Speed Petrol'] ?? parsedRates['XP Premium Petrol']),
+              'CNG': parseRate(parsedRates['CNG'])
+            });
           }
-        } catch (e) {}
-      }
+        } else if (prevSnapshot && prevSnapshot.fuelRates) {
+          setRates(prevSnapshot.fuelRates);
+        }
+      } catch (e) {}
 
       // Operational Tables reset to fresh 1 blank default row each
       setLubricants([
@@ -1764,6 +1825,7 @@ export function AppProvider({ children }) {
         // Reactive Shift State
         dips, setDips,
         rates, setRates,
+        lockFuelRates,
         nozzles, setNozzles,
         lubricants, setLubricants,
         expenseEntries, setExpenseEntries,
@@ -1852,6 +1914,7 @@ export function useApp() {
       setDips: () => {},
       rates: { 'Motor Spirit (Petrol)': 0, 'High Speed Diesel': 0, 'Speed Petrol': 0, 'CNG': 0 },
       setRates: () => {},
+      lockFuelRates: async () => {},
       nozzles: [],
       setNozzles: () => {},
       lubricants: [],

@@ -65,6 +65,7 @@ export default function MasterDailySheet() {
     setIsLocked,
     dips, setDips,
     rates, setRates,
+    lockFuelRates,
     nozzles, setNozzles,
     lubricants, setLubricants,
     expenseEntries, setExpenseEntries,
@@ -653,6 +654,7 @@ export default function MasterDailySheet() {
         const userId = activeUser ? JSON.parse(activeUser)?.id : null;
         if (userId) {
           localStorage.setItem(`mypump_${userId}_pump_last_fuel_rates`, JSON.stringify(updated));
+          localStorage.setItem(`mypump_${userId}_locked_fuel_rates`, JSON.stringify(updated));
         }
       } catch (e) {}
       return updated;
@@ -670,6 +672,7 @@ export default function MasterDailySheet() {
           const userId = activeUser ? JSON.parse(activeUser)?.id : null;
           if (userId) {
             localStorage.setItem(`mypump_${userId}_pump_last_fuel_rates`, JSON.stringify(updated));
+            localStorage.setItem(`mypump_${userId}_locked_fuel_rates`, JSON.stringify(updated));
           }
         } catch (e) {}
         return updated;
@@ -1000,24 +1003,59 @@ export default function MasterDailySheet() {
     }));
   };
 
-  const handleApplyGlobalRates = (e) => {
+  const handleApplyGlobalRates = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (e && e.stopPropagation) e.stopPropagation();
     try {
-      if (!Array.isArray(nozzles)) return;
-      const updated = nozzles.map(n => {
-        const newRate = getProductRate(n?.productName);
-        const sales = parseFloat(n?.salesLitres) || 0;
-        return {
-          ...n,
-          rate: newRate,
-          totalAmount: Number((sales * newRate).toFixed(2))
-        };
-      });
-      setNozzles(updated);
-      showToast('Applied MS, HSD, Speed & CNG rates across active nozzles!', 'success');
+      const cleanRate = (v) => {
+        if (v === undefined || v === null || v === '') return 0;
+        const n = parseFloat(v);
+        return Number.isNaN(n) ? 0 : Math.max(0, n);
+      };
+      const lockedRates = {
+        'Motor Spirit (Petrol)': cleanRate(rates['Motor Spirit (Petrol)']),
+        'High Speed Diesel': cleanRate(rates['High Speed Diesel']),
+        'Speed Petrol': cleanRate(rates['Speed Petrol'] !== undefined && rates['Speed Petrol'] !== '' ? rates['Speed Petrol'] : rates['XP Premium Petrol']),
+        'CNG': cleanRate(rates['CNG'])
+      };
+
+      if (lockFuelRates) {
+        await lockFuelRates(lockedRates);
+      } else {
+        setRates(lockedRates);
+      }
+
+      if (Array.isArray(nozzles)) {
+        const updated = nozzles.map(n => {
+          const norm = getNormalizedProductName(n?.productName);
+          let newRate = 0;
+          if (norm === 'High Speed Diesel') newRate = lockedRates['High Speed Diesel'];
+          else if (norm === 'XP Premium Petrol') newRate = lockedRates['Speed Petrol'];
+          else if (norm === 'CNG') newRate = lockedRates['CNG'];
+          else newRate = lockedRates['Motor Spirit (Petrol)'];
+
+          const sales = parseFloat(n?.salesLitres) || 0;
+          return {
+            ...n,
+            rate: newRate,
+            totalAmount: Number((sales * newRate).toFixed(2))
+          };
+        });
+        setNozzles(updated);
+
+        try {
+          localStorage.setItem('pump_nozzle_master_config', JSON.stringify(updated));
+          const activeUser = localStorage.getItem('mypump_current_user');
+          const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+          if (userId) {
+            localStorage.setItem(`mypump_${userId}_pump_nozzle_master_config`, JSON.stringify(updated));
+          }
+        } catch (err) {}
+      }
+      showToast('Fuel Rates Locked & Applied to All Nozzles!', 'success');
     } catch (err) {
       console.error('Handled action error without reloading in handleApplyGlobalRates:', err);
+      showToast('Error applying rates: ' + err.message, 'error');
     }
   };
 
@@ -1250,6 +1288,17 @@ export default function MasterDailySheet() {
       // Rollover Closing Shree Silak -> New Opening Shree Silak
       const nextOpeningCash = closingShreeSilak;
       setOpeningShreeSilak(nextOpeningCash);
+
+      // Preserve locked fuel rates across shifts
+      try {
+        localStorage.setItem('pump_last_fuel_rates', JSON.stringify(rates));
+        const activeUser = localStorage.getItem('mypump_current_user');
+        const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+        if (userId) {
+          localStorage.setItem(`mypump_${userId}_pump_last_fuel_rates`, JSON.stringify(rates));
+          localStorage.setItem(`mypump_${userId}_locked_fuel_rates`, JSON.stringify(rates));
+        }
+      } catch (e) {}
 
       // Apply In-Place Reset States for Sections A through H
       setNozzles(refreshedNozzles);
@@ -2435,6 +2484,12 @@ export default function MasterDailySheet() {
         }
         try {
           localStorage.setItem('pump_last_fuel_rates', JSON.stringify(rates));
+          const activeUser = localStorage.getItem('mypump_current_user');
+          const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+          if (userId) {
+            localStorage.setItem(`mypump_${userId}_pump_last_fuel_rates`, JSON.stringify(rates));
+            localStorage.setItem(`mypump_${userId}_locked_fuel_rates`, JSON.stringify(rates));
+          }
           await db.settings.put({
             key: 'pump_last_fuel_rates',
             data: rates,

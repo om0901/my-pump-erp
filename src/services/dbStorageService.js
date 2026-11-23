@@ -528,7 +528,10 @@ export async function fetchUserStationData(userId, defaultOverrides = {}) {
       // Hydrate local cache namespaced by user.id
       setScopedLocalData(userId, 'data', row);
       if (row.station_profile) setScopedLocalData(userId, 'station_profile', row.station_profile);
-      if (row.fuel_rates) setScopedLocalData(userId, 'pump_last_fuel_rates', row.fuel_rates);
+      if (row.fuel_rates) {
+        setScopedLocalData(userId, 'locked_fuel_rates', row.fuel_rates);
+        setScopedLocalData(userId, 'pump_last_fuel_rates', row.fuel_rates);
+      }
       if (row.nozzle_config) setScopedLocalData(userId, 'pump_nozzle_master_config', row.nozzle_config);
       if (row.dip_levels) setScopedLocalData(userId, 'pump_last_dip_levels', row.dip_levels);
       if (row.other_accounts?.ushinaDirectory) setScopedLocalData(userId, 'pump_ushina_directory', row.other_accounts.ushinaDirectory);
@@ -626,7 +629,10 @@ export async function upsertUserStationData(userId, snapshot = {}) {
     // 1. Immediately update namespaced local cache so UI is instantaneous
     setScopedLocalData(userId, 'data', payload);
     if (payload.station_profile) setScopedLocalData(userId, 'station_profile', payload.station_profile);
-    if (payload.fuel_rates) setScopedLocalData(userId, 'pump_last_fuel_rates', payload.fuel_rates);
+    if (payload.fuel_rates) {
+      setScopedLocalData(userId, 'locked_fuel_rates', payload.fuel_rates);
+      setScopedLocalData(userId, 'pump_last_fuel_rates', payload.fuel_rates);
+    }
     if (payload.nozzle_config) setScopedLocalData(userId, 'pump_nozzle_master_config', payload.nozzle_config);
     if (payload.dip_levels) setScopedLocalData(userId, 'pump_last_dip_levels', payload.dip_levels);
 
