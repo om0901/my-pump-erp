@@ -40,52 +40,10 @@ const ACCOUNT_CATEGORIES = [
 ];
 
 // Default Ushina Khata (Dual Jama-Udhar) Accounts
-const DEFAULT_USHINA_ACCOUNTS = DEFAULT_USHINA_DIRECTORY;
+const DEFAULT_USHINA_ACCOUNTS = [];
 
-// Default Daily Pump Expenses (Single-Sided Expense Log) Categories
-const DEFAULT_EXPENSE_CATEGORIES = [
-  {
-    id: 'exp-cat-1',
-    name: 'Tea & Refreshment',
-    category: 'Daily Operations',
-    entries: [
-      { id: 'e-1', date: '2026-09-01', amount: 350, description: 'Staff daily tea & breakfast', paymentMode: 'Cash' },
-      { id: 'e-2', date: '2026-09-02', amount: 280, description: 'Visitor tea & snacks', paymentMode: 'Cash' }
-    ]
-  },
-  {
-    id: 'exp-cat-2',
-    name: 'Generator Diesel',
-    category: 'Power & Fuel',
-    entries: [
-      { id: 'e-3', date: '2026-09-02', amount: 1800, description: 'DG Set fuel refill 20L', paymentMode: 'Cash' }
-    ]
-  },
-  {
-    id: 'exp-cat-3',
-    name: 'Electricity & Utilities',
-    category: 'Utility Bills',
-    entries: [
-      { id: 'e-4', date: '2026-09-03', amount: 4500, description: 'Power house electricity bill', paymentMode: 'Bank Transfer' }
-    ]
-  },
-  {
-    id: 'exp-cat-4',
-    name: 'Stationery & Office',
-    category: 'Office Supplies',
-    entries: [
-      { id: 'e-5', date: '2026-09-03', amount: 650, description: 'Bill books & thermal paper rolls', paymentMode: 'Cash' }
-    ]
-  },
-  {
-    id: 'exp-cat-5',
-    name: 'Maintenance & Repairs',
-    category: 'Maintenance',
-    entries: [
-      { id: 'e-6', date: '2026-09-03', amount: 1200, description: 'Nozzle calibration & seal repair', paymentMode: 'Online UPI' }
-    ]
-  }
-];
+// Default Daily Pump Expenses (Single-Sided Expense Log) Categories (100% Zero-State for new users)
+const DEFAULT_EXPENSE_CATEGORIES = [];
 
 export const sanitizeUshinaList = (list) => {
   if (!Array.isArray(list)) return DEFAULT_USHINA_ACCOUNTS;

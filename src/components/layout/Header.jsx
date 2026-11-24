@@ -153,7 +153,12 @@ export default function Header() {
 
               <div className="space-y-1">
                 <button type="button"
-                  onClick={() => { setShowProfileMenu(false); openAuthModal('login'); }}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowProfileMenu(false);
+                    await logout('signin');
+                  }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <LogIn className="w-3.5 h-3.5 text-blue-600" />
@@ -161,7 +166,12 @@ export default function Header() {
                 </button>
 
                 <button type="button"
-                  onClick={() => { setShowProfileMenu(false); openAuthModal('signup'); }}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowProfileMenu(false);
+                    await logout('signup');
+                  }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-orange-700 hover:bg-orange-50 flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <UserPlus className="w-3.5 h-3.5 text-orange-600" />
@@ -169,7 +179,12 @@ export default function Header() {
                 </button>
 
                 <button type="button"
-                  onClick={() => { setShowProfileMenu(false); logout(); }}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowProfileMenu(false);
+                    await logout('signin');
+                  }}
                   className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />

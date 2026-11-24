@@ -1300,29 +1300,15 @@ export default function MasterDailySheet() {
         }
       } catch (e) {}
 
-      // Apply In-Place Reset States for Sections A through H
+      // Apply In-Place Reset States for Sections A through H (Clean Zero State)
       setNozzles(refreshedNozzles);
-
-      setLubricants([
-        { productName: '2T Engine Oil (Pouches/Bottles)', litreVolume: 0.04, volume: 0.04, soldQty: 0, soldCount: 0, unitPrice: 15, rate: 15, totalAmount: 0 }
-      ]);
-      setJamaEntries([
-        { customerName: '', paymentMode: 'Cash', amount: 0, notes: '' }
-      ]);
-      const defaultParty = (Array.isArray(ushinaDirectoryList) && ushinaDirectoryList.length > 0)
-        ? ushinaDirectoryList[0]?.name
-        : (ushinaDirectory[0]?.name || 'om');
-      setOtherIncomeEntries([
-        { category: defaultParty || 'om', description: '', amount: 0 }
-      ]);
-      setDebitEntries([
-        { customerId: activePartiesList[0]?.id || '', customerName: activePartiesList[0]?.name || '', vehicleNo: '', billNo: '', billType: 'Debit Bill', fuelProduct: 'MS Petrol', fuelType: 'MS Petrol', litres: 0, slipNo: '', rate: rates['Motor Spirit (Petrol)'] ?? 0, amount: 0 }
-      ]);
+      setLubricants([]);
+      setJamaEntries([]);
+      setOtherIncomeEntries([]);
+      setDebitEntries([]);
       setDigitalPayEntries([]);
       setSmartMoneyEntries([]);
-      setSmartBalanceEntries([
-        { provider: 'PhonePe QR', txnId: '', txnCount: 0, settledAmount: 0, feeDeduction: 0, netReceived: 0 }
-      ]);
+      setSmartBalanceEntries([]);
       setExpenseEntries([]);
       setBankEntries([]);
       setDenominations({ n2000: 0, n500: 0, n200: 0, n100: 0, n50: 0, n20: 0, n10: 0, coins: 0 });
@@ -2819,24 +2805,36 @@ export default function MasterDailySheet() {
       window.dispatchEvent(new Event('lubricant_matrix_updated'));
 
       // Supabase Cloud Shift Snapshot Sync (Account-isolated into pump_station_data)
+      let cloudError = null;
       if (currentUser?.id) {
-        upsertUserStationData(currentUser.id, {
-          stationProfile,
-          nozzles,
-          rates,
-          dips,
-          dailyShifts: [
-            {
-              date: selectedDate,
-              shiftType: activeShift,
-              totals: { grossInflow, totalDeductions, netCashInHand },
-              savedAt: new Date().toISOString()
-            }
-          ],
-          otherAccounts: { ushinaDirectory, pumpExpenses: pumpExpenseCategories },
-          bankEntries,
-          staffAttendance: {}
-        }).catch(err => console.warn('Supabase pump_station_data upsert error:', err));
+        try {
+          localStorage.setItem(`mypump_${currentUser.id}_workspace`, JSON.stringify(shiftSnapshot));
+        } catch (e) {}
+
+        try {
+          const res = await upsertUserStationData(currentUser.id, {
+            stationProfile,
+            nozzles,
+            rates,
+            dips,
+            dailyShifts: [
+              {
+                date: selectedDate,
+                shiftType: activeShift,
+                totals: { grossInflow, totalDeductions, netCashInHand },
+                savedAt: new Date().toISOString()
+              }
+            ],
+            otherAccounts: { ushinaDirectory, pumpExpenses: pumpExpenseCategories },
+            bankEntries,
+            staffAttendance: {}
+          });
+          if (res?.error) {
+            cloudError = res.error?.message || String(res.error);
+          }
+        } catch (err) {
+          cloudError = err?.message || String(err);
+        }
 
         syncStationDataToCloud(currentUser.id, {
           date: selectedDate,
@@ -2849,7 +2847,11 @@ export default function MasterDailySheet() {
         }).catch(err => console.warn('Supabase cloud shift sync error:', err));
       }
 
-      showToast('✅ Daily Shift Saved & Section B Lubricants Synced to Monthly Matrix!', 'success');
+      if (cloudError) {
+        showToast('Saved locally, but Cloud sync warning: ' + cloudError, 'warning');
+      } else {
+        showToast('All Station Data Saved to Your Account!', 'success');
+      }
     } catch (err) {
       console.error('Handled action error without reloading:', err);
       showToast('Error saving Daily Shift: ' + (err?.message || String(err)), 'error');

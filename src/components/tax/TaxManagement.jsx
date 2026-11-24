@@ -330,24 +330,13 @@ export default function TaxManagement() {
           return loadedData;
         });
       } else {
-        const todayStr = selectedDate || new Date().toISOString().split('T')[0];
-        
-        // Initial sample records for 5 sections
+        // Initial clean zero-state records for 5 sections (no sample/mock data)
         const initialData = {
-          purchasing: [
-            computePurchasingRow({ id: 'purch-1', date: todayStr, supplier: 'IOCL Kandla Depot', product: 'Petrol (MS)', ratePerLiter: 72.40, volumeOrQty: 12000, gstPercent: 0, vatPercent: 13.7, tdsPercent: 0.1 }),
-            computePurchasingRow({ id: 'purch-2', date: todayStr, supplier: 'HPCL Hazira Terminal', product: 'Diesel (HSD)', ratePerLiter: 68.10, volumeOrQty: 20000, gstPercent: 0, vatPercent: 14.9, tdsPercent: 0.1 })
-          ],
+          purchasing: [],
           vat: generateInitialVatGrid(selectedYearMonth),
-          gst: [
-            { id: 1, date: todayStr, supplierName: 'Servo Lubricants Distributor', gstin: '24AAACD1234F1Z5', invoiceNo: 'INV-8841', taxableValue: 85000, cgstRate: 9, sgstRate: 9, igstRate: 0, cgstAmount: 7650, sgstAmount: 7650, igstAmount: 0, totalTax: 15300, netInvoice: 100300 },
-            { id: 2, date: todayStr, supplierName: 'Larsen & Toubro Metering', gstin: '24AABCL9921K1Z2', invoiceNo: 'LT-5510', taxableValue: 42000, cgstRate: 9, sgstRate: 9, igstRate: 0, cgstAmount: 3780, sgstAmount: 3780, igstAmount: 0, totalTax: 7560, netInvoice: 49560 }
-          ],
+          gst: [],
           tds: generateInitialTdsGrid(selectedYearMonth),
-          weight: [
-            { id: 1, date: todayStr, dispenserNo: 'MPD-1', nozzleInfo: 'N1 (PETROL)', testResult: '5.000 L (Exact)', errorMl: 0, dueMonth: '2026-12', certNo: 'WM-2026-901', officer: 'Inspector K. Patel / Verified', status: 'Valid' },
-            { id: 2, date: todayStr, dispenserNo: 'MPD-2', nozzleInfo: 'N3 (DIESEL)', testResult: '4.995 L (-5ml)', errorMl: -5, dueMonth: '2026-09', certNo: 'WM-2026-902', officer: 'Inspector K. Patel / Verified', status: 'Due Soon' }
-          ]
+          weight: []
         };
 
         setTaxData(prev => {

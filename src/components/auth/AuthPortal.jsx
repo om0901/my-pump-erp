@@ -21,11 +21,17 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-export default function AuthPortal() {
+export default function AuthPortal({ initialMode = 'signin' }) {
   const { login, signup, resetPassword } = useAuth();
 
   // Mode: 'signin' | 'signup' | 'forgot'
-  const [mode, setMode] = useState('signin');
+  const [mode, setMode] = useState(initialMode === 'signup' ? 'signup' : 'signin');
+
+  useEffect(() => {
+    if (initialMode) {
+      setMode(initialMode === 'signup' ? 'signup' : 'signin');
+    }
+  }, [initialMode]);
 
   // Common fields
   const [email, setEmail] = useState('');

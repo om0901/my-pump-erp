@@ -528,10 +528,14 @@ export async function fetchUserStationData(userId, defaultOverrides = {}) {
       // Hydrate local cache namespaced by user.id
       setScopedLocalData(userId, 'data', row);
       if (row.station_profile) {
-        if (localStorage.getItem(`mypump_${userId}_onboarded`) === 'true' || localStorage.getItem('mypump_onboarded') === 'true') {
-          row.station_profile.isOnboarded = true;
-        }
+        // Existing station found in Supabase: strictly mark as onboarded so popup never reappears
+        row.station_profile.isOnboarded = true;
+        setScopedLocalData(userId, 'onboarded', 'true');
         setScopedLocalData(userId, 'station_profile', row.station_profile);
+        try {
+          localStorage.setItem(`mypump_${userId}_onboarded`, 'true');
+          localStorage.setItem('mypump_onboarded', 'true');
+        } catch (e) {}
       }
       if (row.fuel_rates) {
         setScopedLocalData(userId, 'locked_fuel_rates', row.fuel_rates);

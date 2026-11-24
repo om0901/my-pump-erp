@@ -26,31 +26,19 @@ export const DEFAULT_PRODUCT_CATALOG = [
   {
     category: "Fuels (OMC)",
     items: [
-      { id: "fuel-1", name: "Petrol (MS)", defaultUnit: "Liter", defaultTax: "VAT", defaultVat: 13.7, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 94.48 },
-      { id: "fuel-2", name: "Diesel (HSD)", defaultUnit: "Liter", defaultTax: "VAT", defaultVat: 14.9, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 90.16 },
-      { id: "fuel-3", name: "Speed / Power (Premium)", defaultUnit: "Liter", defaultTax: "VAT", defaultVat: 13.7, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 104.50 },
-      { id: "fuel-4", name: "CNG", defaultUnit: "KG", defaultTax: "VAT", defaultVat: 5.0, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 75.80 }
+      { id: "fuel-1", name: "Petrol (MS)", defaultUnit: "Liter", defaultTax: "VAT", defaultVat: 13.7, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 0 },
+      { id: "fuel-2", name: "Diesel (HSD)", defaultUnit: "Liter", defaultTax: "VAT", defaultVat: 14.9, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 0 },
+      { id: "fuel-3", name: "Speed / Power (Premium)", defaultUnit: "Liter", defaultTax: "VAT", defaultVat: 13.7, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 0 },
+      { id: "fuel-4", name: "CNG", defaultUnit: "KG", defaultTax: "VAT", defaultVat: 5.0, defaultGst: 0, defaultVolume: 1.0, defaultPrice: 0 }
     ]
   },
   {
     category: "Lubricants & Engine Oils",
-    items: [
-      { id: "lub-1", name: "2T Engine Oil (Pouches/Bottles)", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 0.04, defaultPrice: 15 },
-      { id: "lub-2", name: "4T 20W-40 Bike Oil", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.0, defaultPrice: 380 },
-      { id: "lub-3", name: "15W-40 Heavy Diesel Engine Oil", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.0, defaultPrice: 420 },
-      { id: "lub-4", name: "Gear Oil EP 90/140", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.0, defaultPrice: 350 },
-      { id: "lub-5", name: "Grease AP3 / MP", defaultUnit: "KG", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.0, defaultPrice: 280 },
-      { id: "lub-6", name: "2T Oil Pouch 40ml", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 0.04, defaultPrice: 15 },
-      { id: "lub-7", name: "2T Oil 500ml Can", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 0.50, defaultPrice: 180 },
-      { id: "lub-8", name: "Servo Super 4T (1L)", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.00, defaultPrice: 380 }
-    ]
+    items: []
   },
   {
     category: "Additives & Specialties",
-    items: [
-      { id: "sp-1", name: "DEF / AdBlue (EcoClean)", defaultUnit: "Liter", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.0, defaultPrice: 65 },
-      { id: "sp-2", name: "Distilled Water", defaultUnit: "Bottle", defaultTax: "GST", defaultGst: 18, defaultVat: 0, defaultVolume: 1.0, defaultPrice: 20 }
-    ]
+    items: []
   }
 ];
 
@@ -341,20 +329,16 @@ export function AppProvider({ children }) {
   // --- SHARED LUBRICANTS PRODUCTS MASTER ---
   const [lubricantProducts, setLubricantProducts] = useState(() => {
     try {
-      const saved = localStorage.getItem('pump_lubricant_monthly_matrix');
+      const activeUser = localStorage.getItem('mypump_current_user');
+      const userId = activeUser ? JSON.parse(activeUser)?.id : null;
+      const key = userId ? `mypump_${userId}_lubricant_products` : 'pump_lubricant_monthly_matrix';
+      const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    const lubes = DEFAULT_PRODUCT_CATALOG.find(c => (c.category || '').toLowerCase().includes('lube'))?.items || [];
-    return lubes.map(item => ({
-      id: item.id || item.name,
-      name: item.name,
-      unit: item.defaultUnit || 'Liter',
-      volume: item.defaultVolume || 1.0,
-      price: item.defaultPrice || 0
-    }));
+    return [];
   });
 
   const updateLubricantProducts = useCallback((newProducts) => {
@@ -777,15 +761,29 @@ export function AppProvider({ children }) {
               }
             } catch (e) {}
           }
-          if (stationRow.fuel_rates) {
+          // Fuel Rates: Preserve user's locked rates so cloud pulls never revert them to zero
+          const localLockedRates = currentUser?.id ? localStorage.getItem(`mypump_${currentUser.id}_locked_fuel_rates`) : null;
+          if (localLockedRates) {
+            try {
+              const parsedL = JSON.parse(localLockedRates);
+              if (parsedL && typeof parsedL === 'object') {
+                setRates(parsedL);
+              }
+            } catch (e) {}
+          } else if (stationRow.fuel_rates && Object.keys(stationRow.fuel_rates).length > 0) {
             setRates(stationRow.fuel_rates);
             localStorage.setItem('pump_last_fuel_rates', JSON.stringify(stationRow.fuel_rates));
-            localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(stationRow.fuel_rates));
+            if (currentUser?.id) {
+              localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(stationRow.fuel_rates));
+              localStorage.setItem(`mypump_${currentUser.id}_locked_fuel_rates`, JSON.stringify(stationRow.fuel_rates));
+            }
           } else if (isNew) {
             const zeroRates = { 'Motor Spirit (Petrol)': 0, 'High Speed Diesel': 0, 'Speed Petrol': 0, 'CNG': 0 };
             setRates(zeroRates);
             localStorage.setItem('pump_last_fuel_rates', JSON.stringify(zeroRates));
-            localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(zeroRates));
+            if (currentUser?.id) {
+              localStorage.setItem(`mypump_${currentUser.id}_pump_last_fuel_rates`, JSON.stringify(zeroRates));
+            }
           }
 
           if (stationRow.nozzle_config && Array.isArray(stationRow.nozzle_config)) {
@@ -1456,44 +1454,14 @@ export function AppProvider({ children }) {
         }
       } catch (e) {}
 
-      // Operational Tables reset to fresh 1 blank default row each
-      setLubricants([
-        { productName: '2T Engine Oil (Pouches/Bottles)', litreVolume: 0.04, volume: 0.04, soldQty: 0, soldCount: 0, unitPrice: 15, rate: 15, totalAmount: 0 }
-      ]);
-      setJamaEntries([
-        { customerName: '', paymentMode: 'Cash', amount: 0, notes: '' }
-      ]);
-      let defaultPartyName = ushinaDirectory[0]?.name || '';
-      let defaultPartyId = ushinaDirectory[0]?.id || null;
-      if (!defaultPartyName) {
-        try {
-          const savedUsh = localStorage.getItem('ushina_accounts') || localStorage.getItem('pump_ushina_directory');
-          if (savedUsh) {
-            const parsed = JSON.parse(savedUsh);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              defaultPartyName = parsed[0]?.name || '';
-              defaultPartyId = parsed[0]?.id || null;
-            }
-          }
-        } catch (e) {}
-      }
-      setOtherIncomeEntries([
-        { accountId: defaultPartyId, partyName: defaultPartyName || 'om', category: defaultPartyName || 'om', description: '', amount: 0 }
-      ]);
-      const currentMsRate = rates['Motor Spirit (Petrol)'] ?? 0;
-      setDebitEntries([
-        { customerId: '', customerName: '', vehicleNo: '', billNo: '', billType: 'Debit Bill', fuelProduct: 'MS Petrol', fuelType: 'MS Petrol', litres: 0, slipNo: '', rate: currentMsRate, amount: 0 }
-      ]);
-      setSmartBalanceEntries([
-        { provider: 'PhonePe QR', txnId: '', txnCount: 0, settledAmount: 0, feeDeduction: 0, netReceived: 0 }
-      ]);
-      setExpenseEntries([
-        { category: 'Cha / Refreshments', description: '', amount: 0 }
-      ]);
-      const firstBank = Array.isArray(bankAccountsMaster) && bankAccountsMaster.length > 0 ? bankAccountsMaster[0] : null;
-      setBankEntries(firstBank ? [
-        { bankAccountId: firstBank.id, bankName: firstBank.name, accountNumber: firstBank.accountNumber || '', slipNo: '', amount: 0, depositedBy: 'Shift Manager' }
-      ] : []);
+      // Operational Tables reset to clean 100% Zero-State
+      setLubricants([]);
+      setJamaEntries([]);
+      setOtherIncomeEntries([]);
+      setDebitEntries([]);
+      setSmartBalanceEntries([]);
+      setExpenseEntries([]);
+      setBankEntries([]);
       setDenominations({ n2000: 0, n500: 0, n200: 0, n100: 0, n50: 0, n20: 0, n10: 0, coins: 0 });
       setIsLocked(false);
 
@@ -1871,6 +1839,7 @@ export function AppProvider({ children }) {
         // Reactive Shift State
         dips, setDips,
         rates, setRates,
+        fuelRates: rates,
         lockFuelRates,
         nozzles, setNozzles,
         lubricants, setLubricants,
@@ -1959,6 +1928,7 @@ export function useApp() {
       dips: { msDipCm: 0, hsdDipCm: 0, speedDipCm: 0 },
       setDips: () => {},
       rates: { 'Motor Spirit (Petrol)': 0, 'High Speed Diesel': 0, 'Speed Petrol': 0, 'CNG': 0 },
+      fuelRates: { 'Motor Spirit (Petrol)': 0, 'High Speed Diesel': 0, 'Speed Petrol': 0, 'CNG': 0 },
       setRates: () => {},
       lockFuelRates: async () => {},
       nozzles: [],

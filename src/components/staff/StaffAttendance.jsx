@@ -55,12 +55,7 @@ const getStatusStyle = (status) => {
   }
 };
 
-const INITIAL_ROSTER = [
-  { id: 'emp-1', name: 'Ramesh Shinde', mobile: '9876543210', aadhaarNumber: '123456789012', address: 'Kheralu, Mehsana', openingBalance: 0, salaryType: 'daily', dailyRate: 600, monthlySalary: 18000 },
-  { id: 'emp-2', name: 'Suresh Kumar', mobile: '9876543211', aadhaarNumber: '234567890123', address: 'Unjha, Mehsana', openingBalance: 500, salaryType: 'daily', dailyRate: 650, monthlySalary: 19500 },
-  { id: 'emp-3', name: 'Mahesh Patel', mobile: '9876543212', aadhaarNumber: '345678901234', address: 'Patan, Gujarat', openingBalance: 0, salaryType: 'monthly', dailyRate: 850, monthlySalary: 25500 },
-  { id: 'emp-4', name: 'Dinesh Varma', mobile: '9876543213', aadhaarNumber: '456789012345', address: 'Visnagar, Gujarat', openingBalance: 0, salaryType: 'daily', dailyRate: 450, monthlySalary: 13500 }
-];
+const INITIAL_ROSTER = [];
 
 const getDaysInMonth = (yearMonthStr) => {
   const [y, m] = (yearMonthStr || '').split('-');

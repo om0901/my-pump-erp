@@ -3,19 +3,19 @@ import { useApp } from '../../context/AppContext';
 import { FileText, Printer, CheckCircle2, Flame, User, Truck, Phone, IndianRupee } from 'lucide-react';
 
 export default function InvoiceMaker() {
-  const { selectedDate, showToast, stationProfile } = useApp();
+  const { selectedDate, showToast, stationProfile, rates } = useApp();
   const [printFormat, setPrintFormat] = useState('A4'); // 'A4', 'Thermal-80mm', 'Thermal-58mm'
   const [invoice, setInvoice] = useState({
     invoiceNo: `MYP-${Date.now().toString().slice(-6)}`,
     date: selectedDate,
-    customerName: 'National Transport Logistics',
-    customerPhone: '+91 98765 43210',
-    vehicleNo: 'MH-12-PQ-4521',
+    customerName: '',
+    customerPhone: '',
+    vehicleNo: '',
     productName: 'High Speed Diesel',
-    litres: 250.0,
-    rate: 89.62,
+    litres: 0,
+    rate: rates?.['High Speed Diesel'] || 0,
     paymentMode: 'Cash',
-    isGst: true,
+    isGst: false,
   });
 
   const subtotal = invoice.litres * invoice.rate;

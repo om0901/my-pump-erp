@@ -214,7 +214,7 @@ export function AuthProvider({ children }) {
   /**
    * Enterprise Supabase Sign Out
    */
-  const logout = async () => {
+  const logout = async (targetMode = 'signin') => {
     setAuthLoading(true);
     try {
       await supabase.auth.signOut();
@@ -224,8 +224,32 @@ export function AuthProvider({ children }) {
       setCurrentUser(null);
       setSession(null);
       setIsAuthenticated(false);
-      setAuthModalMode('login');
+      setAuthModalMode(targetMode);
       setAuthLoading(false);
+      try {
+        localStorage.removeItem('mypump_current_user');
+        // Clean legacy un-prefixed keys so next user starts clean
+        const legacyKeys = [
+          'station_profile',
+          'pump_last_fuel_rates',
+          'pump_nozzle_master_config',
+          'pump_last_dip_levels',
+          'pump_ushina_directory',
+          'ushina_accounts',
+          'pump_expense_categories',
+          'staff_roster',
+          'pump_attendance_records',
+          'pump_product_catalog',
+          'pump_stock_patrak_store',
+          'pump_sell_patrak_store',
+          'pump_ledger_parties',
+          'pump_ledger_transactions',
+          'my_pump_daily_shifts_archive'
+        ];
+        legacyKeys.forEach(k => {
+          try { localStorage.removeItem(k); } catch (_) {}
+        });
+      } catch (e) {}
     }
   };
 
